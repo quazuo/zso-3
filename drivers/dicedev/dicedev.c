@@ -12,16 +12,18 @@
 #include <linux/kref.h>
 #include <linux/interrupt.h>
 
+#include "dicedev.h"
+
 MODULE_LICENSE("GPL");
 
 // miscellaneous constants
 #define DICEDEV_MAX_DEVICES 			256
 
 // ioctl constants
-#define DICEDEV_IOCTL_CREATE_SET 		_IO(0xDD, 0xFC)
-#define DICEDEV_IOCTL_RUN 			_IO(0xDD, 0xFD)
-#define DICEDEV_IOCTL_WAIT 			_IO(0xDD, 0xFE)
-#define DICEDEV_IOCTL_ENABLE_SEED_INCREMENT 	_IO(0xDD, 0xFF)
+//#define DICEDEV_IOCTL_CREATE_SET 		_IO(0xDD, 0xFC)
+//#define DICEDEV_IOCTL_RUN 			_IO(0xDD, 0xFD)
+//#define DICEDEV_IOCTL_WAIT 			_IO(0xDD, 0xFE)
+//#define DICEDEV_IOCTL_ENABLE_SEED_INCREMENT 	_IO(0xDD, 0xFF)
 
 struct dicedev_device {
 	struct pci_dev *pdev;
@@ -58,7 +60,7 @@ static int dicedev_release(struct inode *inode, struct file *file) {
 	return 0;
 }
 
-static int dicedev_ioctl(struct file *file, unsigned int cmd) {
+static int dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 	switch (cmd) {
 	case DICEDEV_IOCTL_CREATE_SET:
 		break; // todo
@@ -167,7 +169,7 @@ out_alloc:
 }
 
 static void dicedev_remove(struct pci_dev *pdev) {
-	struct adlerdev_device *dev = pci_get_drvdata(pdev);
+	struct dicedev_device *dev = pci_get_drvdata(pdev);
 
 	if (dev->dev) {
 		device_destroy(&dicedev_class, dicedev_major + dev->idx);
