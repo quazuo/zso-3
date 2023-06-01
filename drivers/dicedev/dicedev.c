@@ -36,7 +36,7 @@ struct dicedev_device {
 
 static dev_t dicedev_major;
 static struct dicedev_device *dicedev_devices[DICEDEV_MAX_DEVICES];
-static size_t dicedev_devcount = 0;
+// static size_t dicedev_devcount = 0;
 static struct class dicedev_class = {
 	.name = "dicedev",
 	.owner = THIS_MODULE,
@@ -60,7 +60,7 @@ static int dicedev_release(struct inode *inode, struct file *file) {
 	return 0;
 }
 
-static int dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
+static long dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 	switch (cmd) {
 	case DICEDEV_IOCTL_CREATE_SET:
 		break; // todo
@@ -212,7 +212,7 @@ struct pci_driver dicedev_pci_drv = {
 static int dicedev_init(void) {
 	int err;
 
-	err = alloc_chrdev_region(&dicedev_major, 0, MAX_DEV_COUNT, "dicedev");
+	err = alloc_chrdev_region(&dicedev_major, 0, DICEDEV_MAX_DEVICES, "dicedev");
 	if (err) goto err_alloc;
 
 	err = class_register(&dicedev_class);
@@ -231,11 +231,10 @@ err_alloc:
 	return 0;
 }
 
-static int dicedev_exit(void) {
+static void dicedev_exit(void) {
 	pci_unregister_driver(&dicedev_pci_drv);
 	class_unregister(&dicedev_class);
 	unregister_chrdev_region(dicedev_major, 2);
-	return 0;
 }
 
 module_init(dicedev_init);
