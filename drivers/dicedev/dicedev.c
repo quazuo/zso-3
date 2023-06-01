@@ -5,6 +5,12 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
+#include <linux/pci.h>
+#include <linux/anon_inodes.h>
+#include <linux/wait.h>
+#include <linux/file.h>
+#include <linux/kref.h>
+#include <linux/interrupt.h>
 
 MODULE_LICENSE("GPL");
 
