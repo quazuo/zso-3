@@ -116,10 +116,12 @@ static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_i
 	err = pci_enable_device(pdev);
 	if (err) goto out_enable;
 
-	err = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
+	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32)); // todo 32?
 	if (err) goto out_mask;
-	err = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
-	if (err) goto out_mask;
+//	err = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
+//	if (err) goto out_mask;
+//	err = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
+//	if (err) goto out_mask;
 
 	pci_set_master(pdev);
 
