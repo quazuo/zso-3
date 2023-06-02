@@ -16,14 +16,7 @@
 
 MODULE_LICENSE("GPL");
 
-// miscellaneous constants
-#define DICEDEV_MAX_DEVICES 			256
-
-// ioctl constants
-//#define DICEDEV_IOCTL_CREATE_SET 		_IO(0xDD, 0xFC)
-//#define DICEDEV_IOCTL_RUN 			_IO(0xDD, 0xFD)
-//#define DICEDEV_IOCTL_WAIT 			_IO(0xDD, 0xFE)
-//#define DICEDEV_IOCTL_ENABLE_SEED_INCREMENT 	_IO(0xDD, 0xFF)
+#define DICEDEV_MAX_DEVICES 256
 
 struct dicedev_device {
 	struct pci_dev *pdev;
@@ -56,6 +49,7 @@ static int dicedev_open(struct inode *inode, struct file *file) {
 }
 
 static int dicedev_release(struct inode *inode, struct file *file) {
+	printk(KERN_WARNING "Hello from release\n");
 	// todo
 	return 0;
 }
@@ -89,6 +83,8 @@ static struct file_operations dicedev_fops = {
 
 static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_id) {
 	int err, i;
+
+	printk(KERN_WARNING "Hello from begin probe\n");
 
 	// allocate our structure
 	struct dicedev_device *dev = kzalloc(sizeof *dev, GFP_KERNEL);
@@ -151,6 +147,8 @@ static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_i
 		printk(KERN_ERR "dicedev: failed to register subdevice\n");
 		dev->dev = NULL;
 	}
+
+	printk(KERN_WARNING "Hello from end probe\n");
 
 	return 0;
 
