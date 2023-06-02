@@ -57,6 +57,9 @@ static int dicedev_release(struct inode *inode, struct file *file) {
 static long dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 	switch (cmd) {
 	case DICEDEV_IOCTL_CREATE_SET:
+		struct dicedev_ioctl_create_set *cb =
+			(struct dicedev_ioctl_create_set *)arg;
+
 		break; // todo
 	case DICEDEV_IOCTL_RUN:
 		break; // todo
@@ -86,8 +89,6 @@ static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_i
 
 	// allocate our structure
 	struct dicedev_device *dev = kzalloc(sizeof *dev, GFP_KERNEL);
-
-	printk(KERN_WARNING "Hello from begin probe\n");
 
 	if (!dev) {
 		err = -ENOMEM;
@@ -148,8 +149,6 @@ static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_i
 		printk(KERN_ERR "dicedev: failed to register subdevice\n");
 		dev->dev = NULL;
 	}
-
-	printk(KERN_WARNING "Hello from end probe\n");
 
 	return 0;
 
