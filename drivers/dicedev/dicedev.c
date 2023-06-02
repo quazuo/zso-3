@@ -57,7 +57,7 @@ static int dicedev_release(struct inode *inode, struct file *file) {
 
 /** IOCTL STUFF */
 
-static long icedev_ioctl_crtset(unsigned long arg) {
+static long dicedev_ioctl_crtset(unsigned long arg) {
 	struct dicedev_ioctl_create_set *cb =
 		(struct dicedev_ioctl_create_set *) arg;
 	printk(KERN_WARNING "%lld %d\n", cb->allowed, cb->size);
