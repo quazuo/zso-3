@@ -84,10 +84,11 @@ static struct file_operations dicedev_fops = {
 static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_id) {
 	int err, i;
 
-	printk(KERN_WARNING "Hello from begin probe\n");
-
 	// allocate our structure
 	struct dicedev_device *dev = kzalloc(sizeof *dev, GFP_KERNEL);
+
+	printk(KERN_WARNING "Hello from begin probe\n");
+
 	if (!dev) {
 		err = -ENOMEM;
 		goto out_alloc;
