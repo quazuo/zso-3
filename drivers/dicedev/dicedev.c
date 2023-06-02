@@ -54,19 +54,30 @@ static int dicedev_release(struct inode *inode, struct file *file) {
 	return 0;
 }
 
+
+/** IOCTL STUFF */
+
+static long icedev_ioctl_crtset(unsigned long arg) {
+	struct dicedev_ioctl_create_set *cb =
+		(struct dicedev_ioctl_create_set *) arg;
+	printk(KERN_WARNING "%lld %d\n", cb->allowed, cb->size);
+	return 0;
+}
+
 static long dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 	switch (cmd) {
 	case DICEDEV_IOCTL_CREATE_SET:
-		struct dicedev_ioctl_create_set *cb =
-			(struct dicedev_ioctl_create_set *)arg;
-
-		break; // todo
+		dicedev_ioctl_crtset(arg);
+		break;
 	case DICEDEV_IOCTL_RUN:
-		break; // todo
+		// dicedev_ioctl_run(arg);
+		break;
 	case DICEDEV_IOCTL_WAIT:
-		break; // todo
+		// dicedev_ioctl_wait(arg);
+		break;
 	case DICEDEV_IOCTL_ENABLE_SEED_INCREMENT:
-		break; // todo
+		// dicedev_ioctl_seed(arg);
+		break;
 	default:
 		return -ENOTTY;
 	}
