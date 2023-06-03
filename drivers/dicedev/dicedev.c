@@ -22,8 +22,8 @@ MODULE_LICENSE("GPL");
 #define DICEDEV_MAX_DEVICES 	256
 #define DICEDEV_MAX_CONTEXTS 	256
 
-#define DICEDEV_BUF_MAX_SIZE 	1 << 22;
-#define DICEDEV_BUF_INIT_SEED 	42;
+#define DICEDEV_BUF_MAX_SIZE 	1 << 22
+#define DICEDEV_BUF_INIT_SEED 	42
 
 struct dicedev_device {
 	struct pci_dev *pdev;
@@ -227,7 +227,7 @@ static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
 
 static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
-	struct device *dev = ctx->dicedev->pdev->dev;
+	struct device *dev = ctx->dicedev->dev;
 	struct p_table *p_table = &buf->p_table;
 
 	dma_free_coherent(dev, DICEDEV_PAGE_SIZE, p_table->table.buf,
@@ -276,7 +276,7 @@ err_page_alloc:
 
 static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 {
-	int err;
+	int err, fd;
 	struct dicedev_ioctl_create_set _arg;
 	struct dicedev_buf *buf;
 
@@ -287,8 +287,8 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 	buf = kmalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf) return -ENOMEM;
 
-	buf->allowed = _arg->allowed;
-	buf->size = _arg->size;
+	buf->allowed = _arg.allowed;
+	buf->size = _arg.size;
 	buf->seed = DICEDEV_BUF_INIT_SEED;
 
 	if (buf->size > DICEDEV_BUF_MAX_SIZE) {
@@ -301,7 +301,7 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 	if (err) goto err_ptable;
 
 	// make it a file and get the file descriptor
-	int fd = anon_inode_getfd("dicedev", &dicedev_buf_fops, buf, O_RDWR);
+	fd = anon_inode_getfd("dicedev", &dicedev_buf_fops, buf, O_RDWR);
 	if (fd < 0) {
 		err = fd;
 		goto err_file;
@@ -317,9 +317,9 @@ err_bufsize:
 	return err;
 }
 
-static long dicedev_ioctl_seedincr(unsigned long arg)
+static long dicedev_ioctl_seedincr(struct dicedev_ctx *ctx, unsigned long arg)
 {
-	struct dicedev_device *dicedev = pdev->dev->driver_data;
+	struct dicedev_device *dicedev = pci_get_drvdata(ctx->dicedev->pdev);
 	if (!dicedev) {
 		return -ENOENT;
 	}
@@ -344,9 +344,7 @@ static long dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 			err = -EIO;
 			break;
 		}
-
 		// err = dicedev_ioctl_run(arg);
-
 		break;
 	case DICEDEV_IOCTL_WAIT:
 		// err = dicedev_ioctl_wait(arg);
