@@ -257,7 +257,7 @@ static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf
 	printk(KERN_WARNING "dicedev_alloc_ptable\n");
 
 	p_table->table = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
-	if (p_table->table.buf)
+	if (!p_table->table.buf)
 		return -ENOMEM;
 
 	for (i = 0; i < page_count; i++) {
