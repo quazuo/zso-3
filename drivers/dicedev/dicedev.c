@@ -254,15 +254,19 @@ static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf
 	struct p_table *p_table = &buf->p_table;
 	size_t i;
 
-	printk(KERN_WARNING "dicedev_alloc_ptable\n");
+	printk(KERN_WARNING "dicedev_alloc_ptable enter\n");
 
 	p_table->table = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
 	if (!p_table->table.buf)
 		return -ENOMEM;
 
+	printk(KERN_WARNING "dicedev_alloc_ptable before loop\n");
+
 	for (i = 0; i < page_count; i++) {
 		struct dma_buf *page = &p_table->pages[i];
 		uint32_t *entry;
+
+		printk(KERN_WARNING "dicedev_alloc_ptable loop %lu\n", i);
 
 		*page = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
 		if (!page->buf)
