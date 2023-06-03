@@ -335,7 +335,6 @@ err_bufsize:
 static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	int err;
-	struct dicedev_device *dicedev = pci_get_drvdata(ctx->dicedev->pdev);
 	struct dicedev_ioctl_run _arg;
 
 	printk(KERN_WARNING "dicedev_ioctl_run\n");
@@ -346,7 +345,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		return -EFAULT;
 
 	printk(KERN_WARNING "run params: %d %zu %zu %d\n",
-	       _arg.vfd, _arg.addr, _arg.size, _arg.bfd);
+	       _arg.cfd, _arg.addr, _arg.size, _arg.bfd);
 
 	return 0;
 }
