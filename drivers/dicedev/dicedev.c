@@ -11,12 +11,19 @@
 #include <linux/file.h>
 #include <linux/kref.h>
 #include <linux/interrupt.h>
+#include <linux/string.h>
+#include <linux/mm.h>
+#include <linux/dma-mapping.h>
 
 #include "dicedev.h"
 
 MODULE_LICENSE("GPL");
 
-#define DICEDEV_MAX_DEVICES 256
+#define DICEDEV_MAX_DEVICES 	256
+#define DICEDEV_MAX_CONTEXTS 	256
+
+#define DICEDEV_BUF_MAX_SIZE 	1 << 22;
+#define DICEDEV_BUF_INIT_SEED 	42;
 
 struct dicedev_device {
 	struct pci_dev *pdev;
@@ -24,12 +31,32 @@ struct dicedev_device {
 	int idx;
 	struct device *dev;
 	void __iomem *bar;
-	// todo -- maybe smth more
+	// todo -- maybe smth more (np. irq)
+};
+
+struct dicedev_ctx {
+	struct dicedev_device *dicedev;
+	bool burnt;
+};
+
+struct dma_buf {
+	void *buf;
+	dma_addr_t dma_handle;
+};
+
+struct dicedev_buf {
+	int size;
+	struct p_table {
+		struct dma_buf table;
+		struct dma_buf[DICEDEV_PTABLE_ENTRY_COUNT] pages;
+		size_t p_count;
+	} p_table;
+	uint64_t allowed;
+	uint32_t seed;
 };
 
 static dev_t dicedev_major;
 static struct dicedev_device *dicedev_devices[DICEDEV_MAX_DEVICES];
-// static size_t dicedev_devcount = 0;
 static struct class dicedev_class = {
 	.name = "dicedev",
 	.owner = THIS_MODULE,
@@ -40,49 +67,301 @@ static const struct pci_device_id dicedev_pci_ids[] = {
 	{ 0 }
 };
 
-// file operations
+/// misc stuff
 
-static int dicedev_open(struct inode *inode, struct file *file) {
-	printk(KERN_WARNING "Hello from open\n");
+static uint32_t dicedev_ior(struct dicedev_device* dicedev, uint32_t reg)
+{
+	return ioread32(dicedev->bar + reg);
+}
+
+static void dicedev_iow(struct dicedev_device* dicedev, uint32_t reg, uint32_t val)
+{
+	iowrite32(val, dicedev->bar + reg);
+}
+
+static int dicedev_enable(struct pci_dev *pdev)
+{
+	struct dicedev_device* dicedev = pdev->dev->driver_data;
+	if (!dicedev) {
+		return -ENOENT;
+	}
+
+	dicedev_iow(dicedev, DICEDEV_INTR, 0);
+
+	uint8_t enabled_intrs = DICEDEV_INTR_FENCE_WAIT
+				| DICEDEV_INTR_FEED_ERROR
+				| DICEDEV_INTR_CMD_ERROR
+				| DICEDEV_INTR_MEM_ERROR
+				| DICEDEV_INTR_SLOT_ERROR;
+	dicedev_iow(dicedev, DICEDEV_INTR_ENABLE, enabled_intrs);
+
+	dicedev_iow(dicedev, DICEDEV_ENABLE, 1);
+	dicedev_iow(dicedev, DICEDEV_CMD_FENCE_LAST, 0); // todo: na pewno 0?
+	dicedev_iow(dicedev, DICEDEV_CMD_FENCE_WAIT, 0); // todo: ^
+
+	return 0;
+}
+
+static int dicedev_disable(struct pci_dev *pdev)
+{
+	struct dicedev_device* dicedev = pdev->dev->driver_data;
+	if (!dicedev) {
+		return -ENOENT;
+	}
+
+	dicedev_iow(dicedev, DICEDEV_ENABLE, 0);
+	dicedev_iow(dicedev, DICEDEV_INTR_ENABLE, 0);
+
+	return 0;
+}
+
+/// irq handler
+
+static irqreturn_t dicedev_isr(int irq, void *opaque)
+{
+	struct dicedev_device *dev = opaque;
+
+	printk(KERN_WARNING "irq! %d\n", irq);
+	// todo
+
+	return
+		IRQ_HANDLED;
+}
+
+/// buffer file operations
+
+static int dicedev_buf_read(struct file *file, char __user *buf,
+			    size_t size, loff_t *off)
+{
 	// todo
 	return 0;
 }
 
-static int dicedev_release(struct inode *inode, struct file *file) {
-	printk(KERN_WARNING "Hello from release\n");
+static int dicedev_buf_write(struct file *file, const char __user *buf,
+			     size_t size, loff_t *off)
+{
 	// todo
 	return 0;
 }
 
+static int dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	if (cmd != DICEDEV_BUFFER_IOCTL_SEED) {
+		return -ENOTTY;
+	}
 
-/** IOCTL STUFF */
+	struct dicedev_buf *buf_data = file->private_data;
+	if (!buf_data) {
+		return -EINVAL;
+	}
 
-static long dicedev_ioctl_crtset(unsigned long arg) {
-	struct dicedev_ioctl_create_set *cb =
-		(struct dicedev_ioctl_create_set *) arg;
-	printk(KERN_WARNING "%lld %d\n", cb->allowed, cb->size);
+	buf_data->seed = arg;
 	return 0;
 }
 
-static long dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
+static int dicedev_buf_mmap_fault(struct vm_fault *vmf)
+{
+	struct vm_area_struct *vma = vmf->vma;
+	struct file *file = vma->vm_file;
+	struct dicedev_buf *buf = file->private_data;
+
+	if (vmf->pgoff >= buf->size) { // todo - czy to jest ok?
+		return VM_FAULT_SIGBUS;
+	}
+
+	page = virt_to_page(buf->buf + vmf->pgoff); // todo - czy to jest ok?
+	get_page(page);
+	vmf->page = page;
+	return 0;
+}
+
+struct vm_operations_struct dicedev_buf_vmops = {
+	.fault = dicedev_buf_mmap_fault
+};
+
+static int dicedev_buf_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	vma->vm_ops = dicedev_buf_vmops;
+	return 0;
+}
+
+struct file_operations dicedev_buf_fops = {
+	.owner = THIS_MODULE,
+	.read = dicedev_buf_read,
+	.write = dicedev_buf_write,
+	.unlocked_ioctl = dicedev_buf_ioctl,
+	.compat_ioctl = dicedev_buf_ioctl,
+	.mmap = dicedev_buf_mmap
+};
+
+/// file operations
+
+static int dicedev_open(struct inode *inode, struct file *file)
+{
+	struct dicedev_device *dicedev =
+		container_of(inode->i_cdev, struct dicedev_device, cdev);
+
+	struct dicedev_ctx *ctx = kmalloc(sizeof(struct dicedev_ctx), GFP_KERNEL);
+	if (!ctx) {
+		return -ENOMEM;
+	}
+
+	ctx->dicedev = dicedev;
+	ctx->burnt = false;
+	file->private_data = ctx;
+	return 0;
+}
+
+static int dicedev_release(struct inode *inode, struct file *file)
+{
+	if (file->private_data) {
+		kfree(file->private_data);
+	}
+
+	return 0;
+}
+
+static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
+{
+	struct dma_buf buf;
+	buf.buf = dma_alloc_coherent(dev, size, &buf.dma_handle, GFP_KERNEL);
+	return buf;
+}
+
+static void dicedev_free_ptable(struct dicedev *ctx, struct dicedev_buf *buf)
+{
+	struct device *dev = ctx->dicedev->pdev->dev;
+	struct p_table *p_table = &buf->p_table;
+
+	dma_free_coherent(dev, DICEDEV_PAGE_SIZE, p_table->table.buf,
+			  p_table->table.dma_handle);
+
+	for (int i = 0; i < DICEDEV_PTABLE_ENTRY_COUNT; i++) {
+		struct dma_buf *page = &p_table->pages[i];
+		if (page->buf) {
+			dma_free_coherent(dev, DICEDEV_PAGE_SIZE, page->buf,
+					  page->dma_handle);
+		}
+	}
+}
+
+static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
+{
+	struct device *dev = ctx->dicedev->pdev->dev;
+	size_t page_count = buf->size / DICEDEV_PAGE_SIZE +
+			    (buf->size % DICEDEV_PAGE_SIZE ? 1 : 0);
+	struct p_table *p_table = &buf->p_table;
+	size_t i;
+
+	p_table->table = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
+	if (p_table->table.buf)
+		return -ENOMEM;
+
+	for (i = 0; i < page_count; i++) {
+		struct dma_buf *page = &p_table->pages[i];
+
+		*page = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
+		if (!page->buf)
+			goto err_page_alloc;
+
+		memset(page->buf, 0, DICEDEV_PAGE_SIZE);
+
+		uint32_t *entry = p_table->table.buf + (i * DICEDEV_PTABLE_ENTRY_SIZE);
+		*entry = DICEDEV_PTABLE_MAKE_ENTRY(1, page->dma_handle);
+	}
+
+	return 0;
+
+err_page_alloc:
+	dicedev_free_ptable(ctx, buf);
+	return -ENOMEM;
+}
+
+static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
+{
+	int err;
+	struct dicedev_ioctl_create_set _arg;
+	struct dicedev_buf *buf;
+
+	err = copy_from_user(&_arg, (void *) arg,
+			     sizeof(struct dicedev_ioctl_create_set));
+	if (err) return -EFAULT;
+
+	buf = kmalloc(sizeof(*buf), GFP_KERNEL);
+	if (!buf) return -ENOMEM;
+
+	buf->allowed = _arg->allowed;
+	buf->size = _arg->size;
+	buf->seed = DICEDEV_BUF_INIT_SEED;
+
+	if (buf->size > DICEDEV_BUF_MAX_SIZE) {
+		err = -EINVAL;
+		goto err_bufsize;
+	}
+
+	// allocate the buffer and its page table
+	err = dicedev_alloc_ptable(ctx, buf);
+	if (err) goto err_ptable;
+
+	// make it a file and get the file descriptor
+	int fd = anon_inode_getfd("dicedev", dicedev_buf_fops, buf, O_RDWR);
+	if (fd < 0) {
+		err = fd;
+		goto err_file;
+	}
+
+	return fd;
+
+err_file:
+	dicedev_free_ptable(ctx, buf);
+err_ptable:
+err_bufsize:
+	kfree(buf);
+	return err;
+}
+
+static long dicedev_ioctl_seedincr(unsigned long arg)
+{
+	struct dicedev_device *dicedev = pdev->dev->driver_data;
+	if (!dicedev) {
+		return -ENOENT;
+	}
+
+	uint32_t curr_incr_seed = dicedev_ior(dicedev, DICEDEV_INCREMENT_SEED);
+	dicedev_iow(dicedev, DICEDEV_INCREMENT_SEED, 1 - curr_incr_seed);
+
+	return 0;
+}
+
+static long dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	int err = 0;
+	struct dicedev_ctx *ctx = file->private_data;
+
 	switch (cmd) {
 	case DICEDEV_IOCTL_CREATE_SET:
-		dicedev_ioctl_crtset(arg);
+		err = dicedev_ioctl_crtset(ctx, arg);
 		break;
 	case DICEDEV_IOCTL_RUN:
-		// dicedev_ioctl_run(arg);
+		if (ctx && ctx->burnt) {
+			err = -EIO;
+			break;
+		}
+
+		// err = dicedev_ioctl_run(arg);
+
 		break;
 	case DICEDEV_IOCTL_WAIT:
-		// dicedev_ioctl_wait(arg);
+		// err = dicedev_ioctl_wait(arg);
 		break;
 	case DICEDEV_IOCTL_ENABLE_SEED_INCREMENT:
-		// dicedev_ioctl_seed(arg);
+		err = dicedev_ioctl_seedincr(arg);
 		break;
 	default:
 		return -ENOTTY;
 	}
 
-	return 0;
+	return err;
 }
 
 static struct file_operations dicedev_fops = {
@@ -93,14 +372,14 @@ static struct file_operations dicedev_fops = {
 	.compat_ioctl = dicedev_ioctl
 };
 
-// pci operations
+/// pci operations
 
-static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_id) {
+static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_id)
+{
 	int err, i;
 
 	// allocate our structure
 	struct dicedev_device *dev = kzalloc(sizeof *dev, GFP_KERNEL);
-
 	if (!dev) {
 		err = -ENOMEM;
 		goto out_alloc;
@@ -125,12 +404,8 @@ static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_i
 	err = pci_enable_device(pdev);
 	if (err) goto out_enable;
 
-	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32)); // todo 32?
+	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(40)); // todo 40?
 	if (err) goto out_mask;
-//	err = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-//	if (err) goto out_mask;
-//	err = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
-//	if (err) goto out_mask;
 
 	pci_set_master(pdev);
 
@@ -144,7 +419,9 @@ static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_i
 		goto out_bar;
 	}
 
-	// todo -- allocate buffers, do irq stuff, etc(?)
+	// connect the IRQ line
+	err = request_irq(pdev->irq, dicedev_isr, IRQF_SHARED, "dicedev", dev);
+	if (err) goto out_irq;
 
 	// export the cdev
 	cdev_init(&dev->cdev, &dicedev_fops);
@@ -161,10 +438,16 @@ static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_i
 		dev->dev = NULL;
 	}
 
+	// enable the device
+	dicedev_enable(pdev);
+
+	printk(KERN_WARNING "probe successful\n");
+
 	return 0;
 
-
 out_cdev:
+	free_irq(pdev->irq, dev);
+out_irq:
 	pci_iounmap(pdev, dev->bar);
 out_bar:
 	pci_release_regions(pdev);
@@ -179,14 +462,18 @@ out_alloc:
 	return err;
 }
 
-static void dicedev_remove(struct pci_dev *pdev) {
+static void dicedev_remove(struct pci_dev *pdev)
+{
 	struct dicedev_device *dev = pci_get_drvdata(pdev);
+
+	printk(KERN_WARNING "removing\n");
 
 	if (dev->dev) {
 		device_destroy(&dicedev_class, dicedev_major + dev->idx);
 	}
 
 	cdev_del(&dev->cdev);
+	free_irq(pdev->irq, dev);
 	pci_iounmap(pdev, dev->bar);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
@@ -194,17 +481,21 @@ static void dicedev_remove(struct pci_dev *pdev) {
 	kfree(dev);
 }
 
-static int dicedev_suspend(struct pci_dev *dev, pm_message_t state) {
+static int dicedev_suspend(struct pci_dev *pdev, pm_message_t state)
+{
 	// todo
 	return 0;
 }
 
-static int dicedev_resume(struct pci_dev *dev) {
+static int dicedev_resume(struct pci_dev *pdev)
+{
 	// todo
 	return 0;
 }
 
-static void dicedev_shutdown(struct pci_dev *dev) {
+static void dicedev_shutdown(struct pci_dev *pdev)
+{
+	dicedev_remove(pdev);
 	// todo
 }
 
@@ -218,7 +509,7 @@ struct pci_driver dicedev_pci_drv = {
 	.shutdown = dicedev_shutdown
 };
 
-// module init/exit
+/// module init/exit
 
 static int dicedev_init(void) {
 	int err;
