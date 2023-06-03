@@ -164,7 +164,7 @@ static vm_fault_t dicedev_buf_mmap_fault(struct vm_fault *vmf)
 
 	printk(KERN_WARNING "mmap fault %lu %d\n", vmf->pgoff, buf->size);
 
-	if (vmf->pgoff >= buf->size) // todo - czy to jest ok?
+	if (vmf->pgoff * DICEDEV_PAGE_SIZE >= buf->size) // todo - czy to jest ok?
 		return VM_FAULT_SIGBUS;
 
 	page = virt_to_page(buf->p_table.pages[vmf->pgoff].buf); // todo - czy to jest ok?
@@ -332,6 +332,24 @@ err_bufsize:
 	return err;
 }
 
+static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
+{
+	int err;
+	struct dicedev_device *dicedev = pci_get_drvdata(ctx->dicedev->pdev);
+	struct dicedev_ioctl_run _arg;
+
+	printk(KERN_WARNING "dicedev_ioctl_run\n");
+
+	err = copy_from_user(&_arg, (void *) arg,
+			     sizeof(struct dicedev_ioctl_run));
+	if (err)
+		return -EFAULT;
+
+	printk(KERN_WARNING "run params: %d %zu %zu %d\n", vfd, addr, size, bfd);
+
+	return 0;
+}
+
 static long dicedev_ioctl_seedincr(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	struct dicedev_device *dicedev = pci_get_drvdata(ctx->dicedev->pdev);
@@ -360,7 +378,7 @@ static long dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 			err = -EIO;
 			break;
 		}
-		// err = dicedev_ioctl_run(ctx, arg);
+		err = dicedev_ioctl_run(ctx, arg);
 		break;
 	case DICEDEV_IOCTL_WAIT:
 		// err = dicedev_ioctl_wait(ctx, arg);
