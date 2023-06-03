@@ -229,7 +229,7 @@ static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
 
 static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
-	struct device *dev = ctx->dicedev->dev;
+	struct device *dev = &ctx->dicedev->pdev->dev;
 	struct p_table *p_table = &buf->p_table;
 
 	printk(KERN_WARNING "dicedev_free_ptable\n");
@@ -248,7 +248,7 @@ static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf
 
 static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
-	struct device *dev = ctx->dicedev->dev;
+	struct device *dev = &ctx->dicedev->pdev->dev;
 	size_t page_count = buf->size / DICEDEV_PAGE_SIZE +
 			    (buf->size % DICEDEV_PAGE_SIZE ? 1 : 0);
 	struct p_table *p_table = &buf->p_table;
@@ -441,10 +441,9 @@ static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_i
 	if (err) goto out_cdev;
 
 	// register it in sysfs
-	dev->dev = device_create(&dicedev_class, &dev->pdev->dev,
+	dev->dev = device_create(&dicedev_class, &pdev->dev,
 				 dicedev_major + dev->idx, dev,
 				 "dice%d", dev->idx);
-
 	if (IS_ERR(dev->dev)) {
 		printk(KERN_ERR "dicedev: failed to register subdevice\n");
 		dev->dev = NULL;
