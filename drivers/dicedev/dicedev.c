@@ -345,7 +345,8 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	if (err)
 		return -EFAULT;
 
-	printk(KERN_WARNING "run params: %d %zu %zu %d\n", vfd, addr, size, bfd);
+	printk(KERN_WARNING "run params: %d %zu %zu %d\n",
+	       _arg.vfd, _arg.addr, _arg.size, _arg.bfd);
 
 	return 0;
 }
