@@ -232,6 +232,8 @@ static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf
 	struct device *dev = ctx->dicedev->dev;
 	struct p_table *p_table = &buf->p_table;
 
+	printk(KERN_WARNING "dicedev_free_ptable\n");
+
 	dma_free_coherent(dev, DICEDEV_PAGE_SIZE, p_table->table.buf,
 			  p_table->table.dma_handle);
 
@@ -251,6 +253,8 @@ static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf
 			    (buf->size % DICEDEV_PAGE_SIZE ? 1 : 0);
 	struct p_table *p_table = &buf->p_table;
 	size_t i;
+
+	printk(KERN_WARNING "dicedev_alloc_ptable\n");
 
 	p_table->table = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
 	if (p_table->table.buf)
@@ -283,12 +287,16 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 	struct dicedev_ioctl_create_set _arg;
 	struct dicedev_buf *buf;
 
+	printk(KERN_WARNING "dicedev_ioctl_crtset\n");
+
 	err = copy_from_user(&_arg, (void *) arg,
 			     sizeof(struct dicedev_ioctl_create_set));
-	if (err) return -EFAULT;
+	if (err)
+		return -EFAULT;
 
-	buf = kmalloc(sizeof(*buf), GFP_KERNEL);
-	if (!buf) return -ENOMEM;
+	buf = kmalloc(sizeof(struct dicedev_buf), GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
 
 	buf->allowed = _arg.allowed;
 	buf->size = _arg.size;
@@ -301,7 +309,8 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 
 	// allocate the buffer and its page table
 	err = dicedev_alloc_ptable(ctx, buf);
-	if (err) goto err_ptable;
+	if (err)
+		goto err_ptable;
 
 	// make it a file and get the file descriptor
 	fd = anon_inode_getfd("dicedev", &dicedev_buf_fops, buf, O_RDWR);
