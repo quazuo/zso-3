@@ -344,8 +344,8 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	if (err)
 		return -EFAULT;
 
-	printk(KERN_WARNING "run params: %d %"PRIu32" %"PRIu32" %d\n",
-	       _arg.cfd, _arg.addr, _arg.size, _arg.bfd);
+	printk(KERN_WARNING "run params: %d %lu %lu %d\n",
+	       _arg.cfd, (unsigned long)_arg.addr, (unsigned long)_arg.size, _arg.bfd);
 
 	return 0;
 }
