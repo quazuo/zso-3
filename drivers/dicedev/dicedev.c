@@ -20,7 +20,6 @@
 MODULE_LICENSE("GPL");
 
 #define DICEDEV_MAX_DEVICES 	256
-#define DICEDEV_MAX_CONTEXTS 	256
 
 #define DICEDEV_BUF_MAX_SIZE 	1 << 22
 #define DICEDEV_BUF_INIT_SEED 	42
@@ -161,12 +160,14 @@ static vm_fault_t dicedev_buf_mmap_fault(struct vm_fault *vmf)
 	struct vm_area_struct *vma = vmf->vma;
 	struct file *file = vma->vm_file;
 	struct dicedev_buf *buf = file->private_data;
-	struct page *page = NULL;
+	struct page *page;
+
+	printk(KERN_WARNING "mmap fault %ul %d\n", vmf->pgoff, buf->size);
 
 	if (vmf->pgoff >= buf->size) // todo - czy to jest ok?
 		return VM_FAULT_SIGBUS;
 
-	// page = virt_to_page(buf->buf + vmf->pgoff); // todo - czy to jest ok?
+	page = virt_to_page(buf->buf + vmf->pgoff); // todo - czy to jest ok?
 	get_page(page);
 	vmf->page = page;
 	return 0;
