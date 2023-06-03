@@ -160,7 +160,7 @@ static vm_fault_t dicedev_buf_mmap_fault(struct vm_fault *vmf)
 	struct vm_area_struct *vma = vmf->vma;
 	struct file *file = vma->vm_file;
 	struct dicedev_buf *buf = file->private_data;
-	struct page *page;
+	struct page *page = NULL;
 
 	printk(KERN_WARNING "mmap fault %lu %d\n", vmf->pgoff, buf->size);
 	return 0;
@@ -168,7 +168,7 @@ static vm_fault_t dicedev_buf_mmap_fault(struct vm_fault *vmf)
 	if (vmf->pgoff >= buf->size) // todo - czy to jest ok?
 		return VM_FAULT_SIGBUS;
 
-	page = virt_to_page(buf->buf + vmf->pgoff); // todo - czy to jest ok?
+	// page = virt_to_page(buf->buf + vmf->pgoff); // todo - czy to jest ok?
 	get_page(page);
 	vmf->page = page;
 	return 0;
