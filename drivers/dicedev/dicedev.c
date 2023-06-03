@@ -244,7 +244,7 @@ static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf
 
 static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
-	struct device *dev = ctx->dicedev->pdev->dev;
+	struct device *dev = ctx->dicedev->dev;
 	size_t page_count = buf->size / DICEDEV_PAGE_SIZE +
 			    (buf->size % DICEDEV_PAGE_SIZE ? 1 : 0);
 	struct p_table *p_table = &buf->p_table;
@@ -256,6 +256,7 @@ static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf
 
 	for (i = 0; i < page_count; i++) {
 		struct dma_buf *page = &p_table->pages[i];
+		uint32_t *entry;
 
 		*page = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
 		if (!page->buf)
@@ -263,7 +264,7 @@ static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf
 
 		memset(page->buf, 0, DICEDEV_PAGE_SIZE);
 
-		uint32_t *entry = p_table->table.buf + (i * DICEDEV_PTABLE_ENTRY_SIZE);
+		entry = p_table->table.buf + (i * DICEDEV_PTABLE_ENTRY_SIZE);
 		*entry = DICEDEV_PTABLE_MAKE_ENTRY(1, page->dma_handle);
 	}
 
@@ -320,11 +321,12 @@ err_bufsize:
 static long dicedev_ioctl_seedincr(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	struct dicedev_device *dicedev = pci_get_drvdata(ctx->dicedev->pdev);
-	if (!dicedev) {
-		return -ENOENT;
-	}
+	uint32_t curr_incr_seed;
 
-	uint32_t curr_incr_seed = dicedev_ior(dicedev, DICEDEV_INCREMENT_SEED);
+	if (!dicedev)
+		return -ENOENT;
+
+	curr_incr_seed = dicedev_ior(dicedev, DICEDEV_INCREMENT_SEED);
 	dicedev_iow(dicedev, DICEDEV_INCREMENT_SEED, 1 - curr_incr_seed);
 
 	return 0;
@@ -344,13 +346,13 @@ static long dicedev_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 			err = -EIO;
 			break;
 		}
-		// err = dicedev_ioctl_run(arg);
+		// err = dicedev_ioctl_run(ctx, arg);
 		break;
 	case DICEDEV_IOCTL_WAIT:
-		// err = dicedev_ioctl_wait(arg);
+		// err = dicedev_ioctl_wait(ctx, arg);
 		break;
 	case DICEDEV_IOCTL_ENABLE_SEED_INCREMENT:
-		err = dicedev_ioctl_seedincr(arg);
+		err = dicedev_ioctl_seedincr(ctx, arg);
 		break;
 	default:
 		return -ENOTTY;
@@ -462,6 +464,8 @@ static void dicedev_remove(struct pci_dev *pdev)
 	struct dicedev_device *dev = pci_get_drvdata(pdev);
 
 	printk(KERN_WARNING "removing\n");
+
+	dicedev_disable(pdev); // todo na pewno?
 
 	if (dev->dev) {
 		device_destroy(&dicedev_class, dicedev_major + dev->idx);
