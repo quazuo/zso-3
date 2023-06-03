@@ -48,7 +48,7 @@ struct dicedev_buf {
 	int size;
 	struct p_table {
 		struct dma_buf table;
-		struct dma_buf[DICEDEV_PTABLE_ENTRY_COUNT] pages;
+		struct dma_buf pages[DICEDEV_PTABLE_ENTRY_COUNT];
 		size_t p_count;
 	} p_table;
 	uint64_t allowed;
@@ -81,14 +81,15 @@ static void dicedev_iow(struct dicedev_device* dicedev, uint32_t reg, uint32_t v
 
 static int dicedev_enable(struct pci_dev *pdev)
 {
-	struct dicedev_device* dicedev = pdev->dev->driver_data;
-	if (!dicedev) {
+	uint8_t enabled_intrs;
+	struct dicedev_device* dicedev = pci_get_drvdata(pdev);
+
+	if (!dicedev)
 		return -ENOENT;
-	}
 
 	dicedev_iow(dicedev, DICEDEV_INTR, 0);
 
-	uint8_t enabled_intrs = DICEDEV_INTR_FENCE_WAIT
+	enabled_intrs = DICEDEV_INTR_FENCE_WAIT
 				| DICEDEV_INTR_FEED_ERROR
 				| DICEDEV_INTR_CMD_ERROR
 				| DICEDEV_INTR_MEM_ERROR
@@ -104,10 +105,9 @@ static int dicedev_enable(struct pci_dev *pdev)
 
 static int dicedev_disable(struct pci_dev *pdev)
 {
-	struct dicedev_device* dicedev = pdev->dev->driver_data;
-	if (!dicedev) {
+	struct dicedev_device* dicedev = pci_get_drvdata(pdev);
+	if (!dicedev)
 		return -ENOENT;
-	}
 
 	dicedev_iow(dicedev, DICEDEV_ENABLE, 0);
 	dicedev_iow(dicedev, DICEDEV_INTR_ENABLE, 0);
@@ -119,57 +119,54 @@ static int dicedev_disable(struct pci_dev *pdev)
 
 static irqreturn_t dicedev_isr(int irq, void *opaque)
 {
-	struct dicedev_device *dev = opaque;
+	// struct dicedev_device *dev = opaque;
 
 	printk(KERN_WARNING "irq! %d\n", irq);
 	// todo
 
-	return
-		IRQ_HANDLED;
+	return IRQ_HANDLED;
 }
 
 /// buffer file operations
 
-static int dicedev_buf_read(struct file *file, char __user *buf,
-			    size_t size, loff_t *off)
+static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
+			    	size_t size, loff_t *off)
 {
 	// todo
 	return 0;
 }
 
-static int dicedev_buf_write(struct file *file, const char __user *buf,
-			     size_t size, loff_t *off)
+static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
+			     	 size_t size, loff_t *off)
 {
 	// todo
 	return 0;
 }
 
-static int dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	if (cmd != DICEDEV_BUFFER_IOCTL_SEED) {
-		return -ENOTTY;
-	}
-
 	struct dicedev_buf *buf_data = file->private_data;
-	if (!buf_data) {
+	if (!buf_data)
 		return -EINVAL;
-	}
+
+	if (cmd != DICEDEV_BUFFER_IOCTL_SEED)
+		return -ENOTTY;
 
 	buf_data->seed = arg;
 	return 0;
 }
 
-static int dicedev_buf_mmap_fault(struct vm_fault *vmf)
+static vm_fault_t dicedev_buf_mmap_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	struct file *file = vma->vm_file;
 	struct dicedev_buf *buf = file->private_data;
+	struct page *page = NULL;
 
-	if (vmf->pgoff >= buf->size) { // todo - czy to jest ok?
+	if (vmf->pgoff >= buf->size) // todo - czy to jest ok?
 		return VM_FAULT_SIGBUS;
-	}
 
-	page = virt_to_page(buf->buf + vmf->pgoff); // todo - czy to jest ok?
+	// page = virt_to_page(buf->buf + vmf->pgoff); // todo - czy to jest ok?
 	get_page(page);
 	vmf->page = page;
 	return 0;
@@ -181,7 +178,7 @@ struct vm_operations_struct dicedev_buf_vmops = {
 
 static int dicedev_buf_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	vma->vm_ops = dicedev_buf_vmops;
+	vma->vm_ops = &dicedev_buf_vmops;
 	return 0;
 }
 
@@ -228,7 +225,7 @@ static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
 	return buf;
 }
 
-static void dicedev_free_ptable(struct dicedev *ctx, struct dicedev_buf *buf)
+static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
 	struct device *dev = ctx->dicedev->pdev->dev;
 	struct p_table *p_table = &buf->p_table;
@@ -304,7 +301,7 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 	if (err) goto err_ptable;
 
 	// make it a file and get the file descriptor
-	int fd = anon_inode_getfd("dicedev", dicedev_buf_fops, buf, O_RDWR);
+	int fd = anon_inode_getfd("dicedev", &dicedev_buf_fops, buf, O_RDWR);
 	if (fd < 0) {
 		err = fd;
 		goto err_file;
