@@ -309,19 +309,13 @@ static int dicedev_alloc_ptable(struct dicedev_ctx *ctx,
 	struct p_table *p_table = &buf->p_table;
 	size_t i;
 
-	printk(KERN_WARNING "dicedev_alloc_ptable enter\n");
-
 	p_table->table = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
 	if (!p_table->table.buf)
 		return -ENOMEM;
 
-	printk(KERN_WARNING "dicedev_alloc_ptable before loop\n");
-
 	for (i = 0; i < page_count; i++) {
 		struct dma_buf *page = &p_table->pages[i];
 		uint32_t *entry;
-
-		printk(KERN_WARNING "dicedev_alloc_ptable loop %lu\n", i);
 
 		*page = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
 		if (!page->buf)
@@ -331,9 +325,6 @@ static int dicedev_alloc_ptable(struct dicedev_ctx *ctx,
 
 		entry = p_table->table.buf + (i * DICEDEV_PTABLE_ENTRY_SIZE);
 		*entry = DICEDEV_PTABLE_MAKE_ENTRY(1, page->dma_handle);
-
-		printk(KERN_WARNING "dma_handle: %#018llx\n", (uint64_t)page->dma_handle);
-		printk(KERN_WARNING "entry: %#010lx\n", (unsigned long)(*entry));
 	}
 
 	return 0;
@@ -408,8 +399,6 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 			break;
 	}
 
-	i = 9; // todo
-
 	if (i == DICEDEV_BUF_SLOT_COUNT) {
 		// todo
 		printk(KERN_WARNING "no slot left\n");
@@ -423,17 +412,12 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 	dicedev_iocmd(dicedev, cmd);
 
 	pa = buf->p_table.table.dma_handle;
-	printk(KERN_WARNING "pa: %#018llx\n", (uint64_t) pa);
 
 	cmd = pa;
 	dicedev_iocmd(dicedev, cmd);
 
-	printk(KERN_WARNING "1 half: %#010lx\n", (unsigned long)cmd);
-
 	cmd = pa >> 32;
 	dicedev_iocmd(dicedev, cmd);
-
-	printk(KERN_WARNING "2 half: %#010lx\n", (unsigned long)cmd);
 
 	buf->slot = i;
 	buf->bound = true;
@@ -444,8 +428,14 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 
 static void dicedev_unbind_slot(struct dicedev_device *dicedev, uint32_t slot)
 {
+	struct dicedev_buf *buf = dicedev->slots[slot];
 	uint32_t cmd = DICEDEV_USER_CMD_UNBIND_SLOT_HEADER(slot);
 	dicedev_iow(dicedev, CMD_MANUAL_FEED, cmd);
+
+	if (buf)
+		buf->bound = false;
+
+	dicedev->slots[slot] = NULL;
 }
 
 static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
@@ -455,8 +445,6 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	struct file *file;
 	struct dicedev_buf *in_buf, *out_buf;
 	uint32_t out_buf_slot;
-
-	printk(KERN_WARNING "dicedev_ioctl_run\n");
 
 	err = copy_from_user(&_arg, (void *)arg,
 			     sizeof(struct dicedev_ioctl_run));
