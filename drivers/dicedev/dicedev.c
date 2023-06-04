@@ -468,7 +468,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	printk(KERN_WARNING "out_buf_slot: %d\n", out_buf_slot);
 
 	if (out_buf_slot == -1)
-		return -EINVAL;
+		return -EINVAL; // todo - it shouldnt be like that but its a placeholder
 
 	for (size_t off = 0; off < _arg.size; off += sizeof(uint32_t)) {
 		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
