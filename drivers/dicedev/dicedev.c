@@ -442,6 +442,12 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 	return buf->slot;
 }
 
+static void dicedev_unbind_slot(struct dicedev_device *dicedev, uint32_t slot)
+{
+	uint32_t cmd = DICEDEV_USER_CMD_UNBIND_SLOT_HEADER(slot);
+	dicedev_iow(CMD_MANUAL_FEED, cmd);
+}
+
 static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	int err;
@@ -626,6 +632,9 @@ static int dicedev_probe(struct pci_dev *pdev,
 
 	// enable the device
 	dicedev_enable(pdev);
+
+	for (uint32_t i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++)
+		dicedev_unbind_slot(dev, i);
 
 	printk(KERN_WARNING "probe successful\n");
 
