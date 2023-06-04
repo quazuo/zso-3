@@ -501,6 +501,8 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		dicedev_iocmd(ctx->dicedev, *cmd);
 	}
 
+	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
+
 	return 0;
 }
 
