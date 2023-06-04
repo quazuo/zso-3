@@ -204,6 +204,9 @@ static long dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long
 		return -ENOTTY;
 
 	buf->seed = arg;
+
+	printk(KERN_WARNING "buf seed: %lu\n", arg);
+
 	return 0;
 }
 
@@ -450,18 +453,21 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	if (err)
 		return -EFAULT;
 
-	printk(KERN_WARNING "run params: %d %lu %lu %d\n", _arg.cfd,
-	       (unsigned long)_arg.addr, (unsigned long)_arg.size, _arg.bfd);
-
 	if (_arg.addr % 4 || _arg.size % 4)
 		return -EINVAL;
 
 	file = fget(_arg.cfd);
+	if (!file)
+		return -EINVAL;
+
 	in_buf = file->private_data;
 	if (!in_buf)
 		return -ENOENT;
 
 	file = fget(_arg.bfd);
+	if (!file)
+		return -EINVAL;
+
 	out_buf = file->private_data;
 	if (!out_buf)
 		return -ENOENT;
