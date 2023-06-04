@@ -77,7 +77,8 @@ static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot) {
 	uint32_t out_type_mask = 0xF << 20;
 	uint32_t out_type = cmd & out_type_mask;
 
-	printk(KERN_WARNING "num: %lu, out_type: %lu\n", num, out_type);
+	printk(KERN_WARNING "num: %lu, out_type: %lu\n",
+	       (unsigned long)num, (unsigned long)out_type);
 
 	return DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, slot);
 }
