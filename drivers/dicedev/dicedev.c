@@ -387,7 +387,8 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		uint32_t *cmd = buf->p_table.pages[page_ndx].buf + page_off;
 		uint32_t queue_free;
 
-		printk(KERN_WARNING "cmd: %lu\n", (unsigned long)(*cmd));
+		printk(KERN_WARNING "ndx: %lu, off: %lu, %cmd: %lu\n",
+		       page_ndx, (unsigned long)page_off, (unsigned long)(*cmd));
 
 		spin_lock_irqsave(&ctx->dicedev->slock, flags);
 		do {
