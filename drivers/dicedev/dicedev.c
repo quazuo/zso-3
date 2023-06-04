@@ -376,12 +376,15 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	printk(KERN_WARNING "run params: %d %lu %lu %d\n", _arg.cfd,
 	       (unsigned long)_arg.addr, (unsigned long)_arg.size, _arg.bfd);
 
+	if (_arg.addr % 4 || _arg.size % 4)
+		return -EINVAL;
+
 	file = fget(_arg.cfd);
 	buf = file->private_data;
 	if (!buf)
 		return -ENOENT;
 
-	for (size_t off = 0; off < _arg.size; off++) {
+	for (size_t off = 0; off < _arg.size; off += sizeof(uint32_t)) {
 		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
 		loff_t page_off = (_arg.addr + off) % DICEDEV_PAGE_SIZE;
 		uint32_t *cmd = buf->p_table.pages[page_ndx].buf + page_off;
