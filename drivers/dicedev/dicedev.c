@@ -395,8 +395,10 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 	uint32_t i, cmd;
 	uint64_t pa;
 
-	if (buf->bound)
-		return;
+	if (buf->bound) {
+		printk(KERN_WARNING "buf already bound\n");
+		return -1;
+	}
 
 	for (i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
 		if (!dicedev->slots[i])
@@ -464,6 +466,9 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 
 	out_buf_slot = dicedev_bind_slot(ctx->dicedev, out_buf);
 	printk(KERN_WARNING "out_buf_slot: %d\n", out_buf_slot);
+
+	if (out_buf_slot == -1)
+		return -EINVAL;
 
 	for (size_t off = 0; off < _arg.size; off += sizeof(uint32_t)) {
 		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
