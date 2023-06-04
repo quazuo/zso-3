@@ -148,7 +148,7 @@ static int dicedev_disable(struct pci_dev *pdev)
 
 static irqreturn_t dicedev_isr(int irq, void *opaque)
 {
-	struct dicedev_device *dev = opaque;
+	struct dicedev_device *dicedev = opaque;
 	uint32_t intr, val;
 
 	if (dev->pdev->irq != irq)
@@ -171,7 +171,7 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 	      DICEDEV_INTR_CMD_ERROR | DICEDEV_INTR_MEM_ERROR |
 	      DICEDEV_INTR_SLOT_ERROR;
 
-	dicedev_iow(dev, DICEDEV_INTR, val);
+	dicedev_iow(dicedev, DICEDEV_INTR, val);
 
 	// todo
 
@@ -222,7 +222,7 @@ static vm_fault_t dicedev_buf_mmap_fault(struct vm_fault *vmf)
 		return VM_FAULT_SIGBUS;
 
 	page = virt_to_page(
-		buf->p_table.pages[vmf->pgoff].buf); // todo - czy to jest ok?
+		buf->p_table.pages[vmf->pgoff].buf);
 	get_page(page);
 	vmf->page = page;
 	return 0;
@@ -404,6 +404,8 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 		if (!dicedev->slots[i])
 			break;
 	}
+
+	i = 9; // todo
 
 	if (i == DICEDEV_BUF_SLOT_COUNT) {
 		// todo
