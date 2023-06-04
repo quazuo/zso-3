@@ -72,10 +72,10 @@ static bool dicedev_is_cmd(uint32_t cmd, int cmd_type) {
 
 static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot) {
 	uint32_t num_mask = 0xFFFF << 4;
-	uint32_t num = cmd & num_mask;
+	uint32_t num = (cmd & num_mask) >> 4;
 
 	uint32_t out_type_mask = 0xF << 20;
-	uint32_t out_type = cmd & out_type_mask;
+	uint32_t out_type = (cmd & out_type_mask) >> 20;
 
 	printk(KERN_WARNING "num: %lu, out_type: %lu\n",
 	       (unsigned long)num, (unsigned long)out_type);
