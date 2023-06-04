@@ -423,12 +423,12 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 	cmd = pa >> 32;
 	dicedev_iocmd(dicedev, cmd);
 
-	printk(KERN_WARNING "1 half: %#010lx\n", cmd);
+	printk(KERN_WARNING "1 half: %#010lx\n", (unsigned long)cmd);
 
 	cmd = pa;
 	dicedev_iocmd(dicedev, cmd);
 
-	printk(KERN_WARNING "2 half: %#010lx\n", cmd);
+	printk(KERN_WARNING "2 half: %#010lx\n", (unsigned long)cmd);
 
 	buf->slot = i;
 	buf->bound = true;
