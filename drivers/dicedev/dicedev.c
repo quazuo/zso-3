@@ -194,17 +194,16 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	return 0;
 }
 
-static long dicedev_buf_ioctl(struct file *file, unsigned int cmd,
-			      unsigned long arg)
+static long dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	struct dicedev_buf *buf_data = file->private_data;
-	if (!buf_data)
+	struct dicedev_buf *buf = file->private_data;
+	if (!buf)
 		return -EINVAL;
 
 	if (cmd != DICEDEV_BUFFER_IOCTL_SEED)
 		return -ENOTTY;
 
-	buf_data->seed = arg;
+	buf->seed = arg;
 	return 0;
 }
 
