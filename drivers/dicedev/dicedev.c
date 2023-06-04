@@ -356,7 +356,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	if (!buf)
 		return -ENOENT;
 
-	for (size_t off = 0; off < size; off++) {
+	for (size_t off = 0; off < _arg.size; off++) {
 		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
 		loff_t page_off = (_arg.addr + off) % DICEDEV_PAGE_SIZE;
 		uint32_t *cmd = buf->p_table.pages[page_ndx].buf + page_off;
