@@ -30,7 +30,8 @@ struct dicedev_device {
 	int idx;
 	struct device *dev;
 	void __iomem *bar;
-	// todo -- maybe smth more (np. irq)
+	spinlock_t slock;
+	// todo -- maybe smth more (np. irq?)
 };
 
 struct dicedev_ctx {
@@ -335,7 +336,10 @@ err_bufsize:
 static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	int err;
+	unsigned long flags;
 	struct dicedev_ioctl_run _arg;
+	struct file *file;
+	struct dicedev_buf *buf;
 
 	printk(KERN_WARNING "dicedev_ioctl_run\n");
 
@@ -347,12 +351,34 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	printk(KERN_WARNING "run params: %d %lu %lu %d\n",
 	       _arg.cfd, (unsigned long)_arg.addr, (unsigned long)_arg.size, _arg.bfd);
 
+	file = fget(_arg.cfd);
+	buf = file->private_data;
+	if (!buf)
+		return -ENOENT;
+
+	for (size_t off = 0; off < size; off++) {
+		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
+		loff_t page_off = (_arg.addr + off) % DICEDEV_PAGE_SIZE;
+		uint32_t *cmd = buf->p_table.pages[page_ndx].buf + page_off;
+		uint32_t queue_free;
+
+		printk(KERN_WARNING "cmd: %lu\n", (unsigned long)(*cmd));
+
+		spin_lock_irqsave(&ctx->dicedev->slock, flags);
+		do {
+			queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
+		} while (queue_free == 0);
+		spin_unlock_irqrestore(&ctx->dicedev->slock, flags);
+
+		dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, *cmd);
+	}
+
 	return 0;
 }
 
 static long dicedev_ioctl_seedincr(struct dicedev_ctx *ctx, unsigned long arg)
 {
-	struct dicedev_device *dicedev = pci_get_drvdata(ctx->dicedev->pdev);
+	struct dicedev_device *dicedev = ctx->dicedev;
 	uint32_t curr_incr_seed;
 
 	if (!dicedev)
@@ -415,6 +441,9 @@ static int dicedev_probe(struct pci_dev *pdev, const struct pci_device_id *pci_i
 	}
 	pci_set_drvdata(pdev, dev);
 	dev->pdev = pdev;
+
+	// init spinlock
+	spin_lock_init(&dev->slock);
 
 	// allocate free index
 	for (i = 0; i < DICEDEV_MAX_DEVICES; i++) {
