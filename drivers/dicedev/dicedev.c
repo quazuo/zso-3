@@ -333,7 +333,7 @@ static int dicedev_alloc_ptable(struct dicedev_ctx *ctx,
 		*entry = DICEDEV_PTABLE_MAKE_ENTRY(1, page->dma_handle);
 
 		printk(KERN_WARNING "dma_handle: %#018llx\n", (uint64_t)page->dma_handle);
-		printk(KERN_WARNING "entry: %#018llx\n", (uint64_t)(*entry));
+		printk(KERN_WARNING "entry: %#010lx\n", (unsigned long)(*entry));
 	}
 
 	return 0;
