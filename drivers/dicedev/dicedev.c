@@ -212,8 +212,6 @@ static long dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long
 
 	buf->seed = _arg.seed;
 
-	printk(KERN_WARNING "buf seed: %lu\n", (unsigned long)_arg.seed);
-
 	return 0;
 }
 
@@ -504,6 +502,20 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	return 0;
 }
 
+static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
+{
+	int err;
+	struct dicedev_ioctl_wait _arg;
+
+	err = copy_from_user(&_arg, (void *) arg, sizeof(_arg));
+	if (err)
+		return -EFAULT;
+
+	// todo
+
+	return 0;
+}
+
 static long dicedev_ioctl_seedincr(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	struct dicedev_device *dicedev = ctx->dicedev;
@@ -536,7 +548,7 @@ static long dicedev_ioctl(struct file *file, unsigned int cmd,
 		err = dicedev_ioctl_run(ctx, arg);
 		break;
 	case DICEDEV_IOCTL_WAIT:
-		// err = dicedev_ioctl_wait(ctx, arg);
+		err = dicedev_ioctl_wait(ctx, arg);
 		break;
 	case DICEDEV_IOCTL_ENABLE_SEED_INCREMENT:
 		err = dicedev_ioctl_seedincr(ctx, arg);
