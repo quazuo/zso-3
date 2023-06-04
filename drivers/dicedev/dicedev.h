@@ -81,7 +81,7 @@ struct dicedev_ioctl_seed_increment
 #define DICEDEV_PTABLE_ENTRY_COUNT \
 	(DICEDEV_PAGE_SIZE / DICEDEV_PTABLE_ENTRY_SIZE)
 #define DICEDEV_PTABLE_MAKE_ENTRY(PRESENT, PA) \
-	((PRESENT & 0x80000000) | (PA >> 4))
+	((PRESENT & 0x1) | (PA << 4))
 
 #define DICEDEV_CMD_TYPE_MASK 			0xE
 
