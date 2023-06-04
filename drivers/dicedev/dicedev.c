@@ -212,7 +212,7 @@ static long dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long
 
 	buf->seed = _arg.seed;
 
-	printk(KERN_WARNING "buf seed: %lu\n", _arg.seed);
+	printk(KERN_WARNING "buf seed: %lu\n", (unsigned long)_arg.seed);
 
 	return 0;
 }
