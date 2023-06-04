@@ -445,7 +445,7 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 static void dicedev_unbind_slot(struct dicedev_device *dicedev, uint32_t slot)
 {
 	uint32_t cmd = DICEDEV_USER_CMD_UNBIND_SLOT_HEADER(slot);
-	dicedev_iow(CMD_MANUAL_FEED, cmd);
+	dicedev_iow(dicedev, CMD_MANUAL_FEED, cmd);
 }
 
 static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
