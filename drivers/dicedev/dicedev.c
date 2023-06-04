@@ -215,7 +215,7 @@ static vm_fault_t dicedev_buf_mmap_fault(struct vm_fault *vmf)
 	struct dicedev_buf *buf = file->private_data;
 	struct page *page;
 
-	printk(KERN_WARNING "mmap fault %lu %d\n", vmf->pgoff, buf->size);
+	printk(KERN_WARNING "mmap fault %lu %lu\n", vmf->pgoff, buf->size);
 
 	if (vmf->pgoff * DICEDEV_PAGE_SIZE >=
 	    buf->size) // todo - czy to jest ok?
