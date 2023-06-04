@@ -197,15 +197,22 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 static long dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct dicedev_buf *buf = file->private_data;
+	struct dicedev_ioctl_seed _arg;
+	int err;
+
 	if (!buf)
 		return -EINVAL;
 
 	if (cmd != DICEDEV_BUFFER_IOCTL_SEED)
 		return -ENOTTY;
 
-	buf->seed = arg;
+	err = copy_from_user(&_arg, (void *) arg, sizeof(_arg));
+	if (err)
+		return -EFAULT;
 
-	printk(KERN_WARNING "buf seed: %lu\n", arg);
+	buf->seed = _arg.seed;
+
+	printk(KERN_WARNING "buf seed: %lu\n", _arg.seed);
 
 	return 0;
 }
@@ -344,8 +351,7 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 
 	printk(KERN_WARNING "dicedev_ioctl_crtset\n");
 
-	err = copy_from_user(&_arg, (void *)arg,
-			     sizeof(struct dicedev_ioctl_create_set));
+	err = copy_from_user(&_arg, (void *)arg, sizeof(_arg));
 	if (err)
 		return -EFAULT;
 
@@ -448,8 +454,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	struct dicedev_buf *in_buf, *out_buf;
 	uint32_t out_buf_slot;
 
-	err = copy_from_user(&_arg, (void *)arg,
-			     sizeof(struct dicedev_ioctl_run));
+	err = copy_from_user(&_arg, (void *)arg, sizeof(_arg));
 	if (err)
 		return -EFAULT;
 
