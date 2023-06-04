@@ -151,10 +151,10 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 	struct dicedev_device *dicedev = opaque;
 	uint32_t intr, val;
 
-	if (dev->pdev->irq != irq)
+	if (dicedev->pdev->irq != irq)
 		return IRQ_NONE;
 
-	intr = dicedev_ior(dev, DICEDEV_INTR);
+	intr = dicedev_ior(dicedev, DICEDEV_INTR);
 
 	if (intr & DICEDEV_INTR_FENCE_WAIT)
 		printk(KERN_WARNING "DICEDEV_INTR_FENCE_WAIT\n");
