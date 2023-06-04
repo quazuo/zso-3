@@ -101,13 +101,13 @@ static void dicedev_iocmd(struct dicedev_device *dicedev, uint32_t cmd)
 	uint32_t queue_free;
 	unsigned long flags;
 
-	spin_lock_irqsave(&ctx->dicedev->slock, flags);
+	spin_lock_irqsave(&dicedev->slock, flags);
 	do {
-		queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
+		queue_free = dicedev_ior(dicedev, CMD_MANUAL_FREE);
 	} while (queue_free == 0);
-	spin_unlock_irqrestore(&ctx->dicedev->slock, flags);
+	spin_unlock_irqrestore(&dicedev->slock, flags);
 
-	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
+	dicedev_iow(dicedev, CMD_MANUAL_FEED, cmd);
 }
 
 static int dicedev_enable(struct pci_dev *pdev)
