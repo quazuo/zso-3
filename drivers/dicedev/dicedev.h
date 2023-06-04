@@ -83,6 +83,8 @@ struct dicedev_ioctl_seed_increment
 #define DICEDEV_PTABLE_MAKE_ENTRY(PRESENT, PA) \
 	((PRESENT & 0x80000000) | (PA >> 4))
 
+#define DICEDEV_CMD_TYPE_MASK 			0xE
+
 #define DICEDEV_USER_CMD_TYPE_NOP 		0x0
 #define DICEDEV_USER_CMD_TYPE_BIND_SLOT 	0x1
 #define DICEDEV_USER_CMD_TYPE_GET_DIE 		0x2

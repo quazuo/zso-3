@@ -64,6 +64,24 @@ static const struct pci_device_id dicedev_pci_ids[] = {
 	{ 0 }
 };
 
+/// cmd utils
+
+static bool dicedev_is_cmd(uint32_t cmd, int cmd_type) {
+	return (cmd & DICEDEV_CMD_TYPE_MASK) == cmd_type;
+}
+
+static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot) {
+	uint32_t num_mask = 0xFFFF << 4;
+	uint32_t num = cmd & num_mask;
+
+	uint32_t out_type_mask = 0xF << 20;
+	uint32_t out_type = cmd & out_type_mask;
+
+	printk(KERN_WARNING "num: %lu, out_type: %lu\n", num, out_type);
+
+	return DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, slot);
+}
+
 /// misc stuff
 
 static uint32_t dicedev_ior(struct dicedev_device *dicedev, uint32_t reg)
@@ -80,6 +98,7 @@ static void dicedev_iow(struct dicedev_device *dicedev, uint32_t reg,
 static void dicedev_iocmd(struct dicedev_device *dicedev, uint32_t cmd)
 {
 	uint32_t queue_free;
+	unsigned long flags;
 
 	spin_lock_irqsave(&ctx->dicedev->slock, flags);
 	do {
@@ -372,8 +391,7 @@ err_bufsize:
 
 static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf *buf)
 {
-	int i;
-	uint32_t cmd;
+	uint32_t i, cmd;
 	uint64_t pa;
 
 	if (buf->bound)
@@ -397,12 +415,12 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 	dicedev_iocmd(dicedev, cmd);
 
 	pa = buf->p_table.table.dma_handle;
-	printf("%#010x\n", (uint64_t) pa);
+	printf("%#010llx\n", (uint64_t) pa);
 
 	cmd = pa >> 32;
 	dicedev_iocmd(dicedev, cmd);
 
-	cmd = pa & 0xffffffff;
+	cmd = pa & (~0U);
 	dicedev_iocmd(dicedev, cmd);
 
 	buf->slot = i;
@@ -415,10 +433,10 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf 
 static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	int err;
-	unsigned long flags;
 	struct dicedev_ioctl_run _arg;
 	struct file *file;
-	struct dicedev_buf *in_buf, out_buf;
+	struct dicedev_buf *in_buf, *out_buf;
+	uint32_t out_buf_slot;
 
 	printk(KERN_WARNING "dicedev_ioctl_run\n");
 
@@ -443,14 +461,21 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	if (!out_buf)
 		return -ENOENT;
 
+	out_buf_slot = dicedev_bind_slot(ctx->dicedev, out_buf);
+	printk(KERN_WARNING "out_buf_slot: %d\n", out_buf_slot);
+
 	for (size_t off = 0; off < _arg.size; off += sizeof(uint32_t)) {
 		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
 		loff_t page_off = (_arg.addr + off) % DICEDEV_PAGE_SIZE;
 		uint32_t *cmd = in_buf->p_table.pages[page_ndx].buf + page_off;
-		uint32_t queue_free;
 
 		printk(KERN_WARNING "ndx: %lu, off: %lu, cmd: %lu\n",
 		       page_ndx, (unsigned long)page_off, (unsigned long)(*cmd));
+
+		if (dicedev_is_cmd(*cmd, DICEDEV_USER_CMD_TYPE_GET_DIE))
+			*cmd = dicedev_cmd_get_die_add_slot(*cmd, out_buf_slot);
+
+		// todo unfinished
 
 		dicedev_iocmd(ctx->dicedev, *cmd);
 	}
