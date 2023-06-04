@@ -25,8 +25,14 @@
 
 /* Section 3: misc constants, enums etc.  */
 
+#define DICEDEV_MAX_DEVICES 				256
+
 #define DICEDEV_SUM_INIT				1
 #define DICEDEV_MOD					65521
+
+#define DICEDEV_BUF_MAX_SIZE 				1 << 22
+#define DICEDEV_BUF_INIT_SEED 				42
+#define DICEDEV_BUF_SLOT_COUNT				16
 
 #define DICEDEV_IOCTL_CREATE_SET 			0x0
 #define DICEDEV_IOCTL_RUN 				0x1

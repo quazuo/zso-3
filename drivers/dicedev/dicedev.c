@@ -19,11 +19,6 @@
 
 MODULE_LICENSE("GPL");
 
-#define DICEDEV_MAX_DEVICES 256
-
-#define DICEDEV_BUF_MAX_SIZE 1 << 22
-#define DICEDEV_BUF_INIT_SEED 42
-
 struct dicedev_device {
 	struct pci_dev *pdev;
 	struct cdev cdev;
@@ -31,7 +26,7 @@ struct dicedev_device {
 	struct device *dev;
 	void __iomem *bar;
 	spinlock_t slock;
-	// todo -- maybe smth more (np. irq?)
+	struct dicedev_buf *slots[DICEDEV_BUF_SLOT_COUNT];
 };
 
 struct dicedev_ctx {
@@ -53,6 +48,8 @@ struct dicedev_buf {
 	} p_table;
 	uint64_t allowed;
 	uint32_t seed;
+	int slot;
+	bool bound;
 };
 
 static dev_t dicedev_major;
@@ -78,6 +75,19 @@ static void dicedev_iow(struct dicedev_device *dicedev, uint32_t reg,
 			uint32_t val)
 {
 	iowrite32(val, dicedev->bar + reg);
+}
+
+static void dicedev_iocmd(struct dicedev_device *dicedev, uint32_t cmd)
+{
+	uint32_t queue_free;
+
+	spin_lock_irqsave(&ctx->dicedev->slock, flags);
+	do {
+		queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
+	} while (queue_free == 0);
+	spin_unlock_irqrestore(&ctx->dicedev->slock, flags);
+
+	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
 }
 
 static int dicedev_enable(struct pci_dev *pdev)
@@ -330,6 +340,8 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 	buf->allowed = _arg.allowed;
 	buf->size = _arg.size;
 	buf->seed = DICEDEV_BUF_INIT_SEED;
+	buf->slot = 0;
+	buf->bound = false;
 
 	if (buf->size > DICEDEV_BUF_MAX_SIZE) {
 		err = -EINVAL;
@@ -358,13 +370,55 @@ err_bufsize:
 	return err;
 }
 
+static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf *buf)
+{
+	int i;
+	uint32_t cmd;
+	uint64_t pa;
+
+	if (buf->bound)
+		return;
+
+	for (i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
+		if (!dicedev->slots[i])
+			break;
+	}
+
+	if (i == DICEDEV_BUF_SLOT_COUNT) {
+		// todo
+		printk(KERN_WARNING "no slot left\n");
+		return -1;
+	}
+
+	cmd = DICEDEV_USER_CMD_BIND_SLOT_HEADER(i, buf->seed);
+	dicedev_iocmd(dicedev, cmd);
+
+	cmd = buf->allowed;
+	dicedev_iocmd(dicedev, cmd);
+
+	pa = buf->p_table.table.dma_handle;
+	printf("%#010x\n", (uint64_t) pa);
+
+	cmd = pa >> 32;
+	dicedev_iocmd(dicedev, cmd);
+
+	cmd = pa & 0xffffffff;
+	dicedev_iocmd(dicedev, cmd);
+
+	buf->slot = i;
+	buf->bound = true;
+	dicedev->slots[i] = buf;
+
+	return buf->slot;
+}
+
 static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	int err;
 	unsigned long flags;
 	struct dicedev_ioctl_run _arg;
 	struct file *file;
-	struct dicedev_buf *buf;
+	struct dicedev_buf *in_buf, out_buf;
 
 	printk(KERN_WARNING "dicedev_ioctl_run\n");
 
@@ -380,26 +434,25 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		return -EINVAL;
 
 	file = fget(_arg.cfd);
-	buf = file->private_data;
-	if (!buf)
+	in_buf = file->private_data;
+	if (!in_buf)
+		return -ENOENT;
+
+	file = fget(_arg.bfd);
+	out_buf = file->private_data;
+	if (!out_buf)
 		return -ENOENT;
 
 	for (size_t off = 0; off < _arg.size; off += sizeof(uint32_t)) {
 		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
 		loff_t page_off = (_arg.addr + off) % DICEDEV_PAGE_SIZE;
-		uint32_t *cmd = buf->p_table.pages[page_ndx].buf + page_off;
+		uint32_t *cmd = in_buf->p_table.pages[page_ndx].buf + page_off;
 		uint32_t queue_free;
 
 		printk(KERN_WARNING "ndx: %lu, off: %lu, cmd: %lu\n",
 		       page_ndx, (unsigned long)page_off, (unsigned long)(*cmd));
 
-		spin_lock_irqsave(&ctx->dicedev->slock, flags);
-		do {
-			queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
-		} while (queue_free == 0);
-		spin_unlock_irqrestore(&ctx->dicedev->slock, flags);
-
-		dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, *cmd);
+		dicedev_iocmd(ctx->dicedev, *cmd);
 	}
 
 	return 0;
@@ -548,7 +601,7 @@ out_regions:
 out_mask:
 	pci_disable_device(pdev);
 out_enable:
-	dicedev_devices[dev->idx] = 0;
+	dicedev_devices[dev->idx] = NULL;
 out_slot:
 	kfree(dev);
 out_alloc:
