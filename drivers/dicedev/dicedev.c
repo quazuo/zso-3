@@ -39,7 +39,7 @@ struct dicedev_device {
 	uint32_t last_fence;
 };
 
-#define DICEDEV_CTX_CMD_QUEUE_SIZE DICEDEV_MANUAL_FEED_SIZE;
+#define DICEDEV_CTX_CMD_QUEUE_SIZE DICEDEV_MANUAL_FEED_SIZE
 
 struct dicedev_ctx {
 	struct dicedev_device *dicedev;
@@ -537,7 +537,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	if (!out_buf)
 		return -ENOENT;
 
-	out_buf_slot = dicedev_bind_slot(ctx->dicedev, out_buf);
+	out_buf_slot = dicedev_bind_slot(ctx, out_buf);
 	printk(KERN_WARNING "out_buf_slot: %d\n", out_buf_slot);
 
 	if (out_buf_slot == -1)
