@@ -19,6 +19,15 @@
 
 MODULE_LICENSE("GPL");
 
+/** TODO.
+ * wspolbieznosc
+ * io_uring
+ * wait
+ * error checking komend
+ * spalanie kontekstu
+ * zamienic do...while(manual_feed == 0) na cos lepszego xd
+ */
+
 struct dicedev_device {
 	struct pci_dev *pdev;
 	struct cdev cdev;
@@ -27,14 +36,21 @@ struct dicedev_device {
 	void __iomem *bar;
 	spinlock_t slock;
 	struct dicedev_buf *slots[DICEDEV_BUF_SLOT_COUNT];
-	uint32_t cmd_no;
+	uint32_t last_fence;
 };
+
+#define DICEDEV_CTX_CMD_QUEUE_SIZE DICEDEV_MANUAL_FEED_SIZE;
 
 struct dicedev_ctx {
 	struct dicedev_device *dicedev;
 	uint32_t submitted; // todo - na pewno tak?
 	uint32_t completed; // todo - ^
 	bool burnt;
+	enum processing_state state;
+	struct cmd_queue {
+		uint32_t cmd_no[DICEDEV_CTX_CMD_QUEUE_SIZE];
+		size_t begin, end;
+	} queue;
 };
 
 struct dma_buf {
@@ -54,10 +70,6 @@ struct dicedev_buf {
 	uint32_t slot;
 	bool bound;
 	struct dicedev_ctx *owner;
-	struct cmd_queue {
-		uint32_t cmd_no[DICEDEV_MANUAL_FEED_SIZE];
-		size_t first, last;
-	} queue;
 };
 
 static dev_t dicedev_major;
@@ -106,15 +118,60 @@ static void dicedev_iow(struct dicedev_device *dicedev, uint32_t reg,
 	iowrite32(val, dicedev->bar + reg);
 }
 
-static void dicedev_iocmd(struct dicedev_device *dicedev, uint32_t cmd)
+static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 {
 	uint32_t queue_free;
 
 	do {
-		queue_free = dicedev_ior(dicedev, CMD_MANUAL_FREE);
+		queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
 	} while (queue_free == 0);
 
-	dicedev_iow(dicedev, CMD_MANUAL_FEED, cmd);
+	// update state
+	if (ctx->state == NONE) {
+		if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_BIND_SLOT))
+			ctx->state = BIND_SLOT_0;
+		else if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE))
+			ctx->state = GET_DIE_0;
+
+	} else if (ctx->state == BIND_SLOT_0) {
+		ctx->state = BIND_SLOT_1;
+
+	} else if (ctx->state == BIND_SLOT_1) {
+		ctx->state = BIND_SLOT_2;
+
+	} else {
+		ctx->state = NONE;
+	}
+
+	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
+
+	// if we finished a cmd, add a fence
+	if (ctx->state == NONE) {
+		uint32_t fence_no = ctx->dicedev->last_fence;
+		uint32_t fence_cmd = DICEDEV_USER_CMD_FENCE_HEADER(fence_no);
+
+		do {
+			queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
+		} while (queue_free == 0);
+
+		dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, fence_cmd);
+
+		ctx->dicedev->last_fence =
+			(ctx->dicedev->last_fence + 1) % (1 << 28);
+
+		ctx->queue.cmd_no[ctx->queue.last] = fence_no;
+		ctx->queue.last = (ctx->queue.last + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
+		if (ctx->queue.first == ctx->queue.last) {
+			ctx->queue.first =
+				(ctx->queue.first + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
+		}
+
+		printk(KERN_WARNING "FENCE SENT: fence_no: %lu, first: %lu, last: %lu\n",
+		       (unsigned long)fence_no, (unsigned long)ctx->queue.first,
+		       (unsigned long)ctx->queue.last);
+
+		// todo: czy na pewno takie zachowanie jesli first == last?
+	}
 }
 
 static int dicedev_enable(struct pci_dev *pdev)
@@ -364,8 +421,6 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 	buf->allowed = _arg.allowed;
 	buf->size = _arg.size;
 	buf->seed = DICEDEV_BUF_INIT_SEED;
-	buf->slot = 0;
-	buf->bound = false;
 	buf->owner = ctx;
 
 	if (buf->size > DICEDEV_BUF_MAX_SIZE) {
@@ -500,7 +555,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 
 		// todo unfinished
 
-		dicedev_iocmd(ctx->dicedev, *cmd);
+		dicedev_iocmd(ctx, *cmd);
 	}
 
 	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
@@ -747,7 +802,7 @@ static int dicedev_init(void)
 err_pci:
 	class_unregister(&dicedev_class);
 err_class:
-	unregister_chrdev_region(dicedev_major, 2);
+	unregister_chrdev_region(dicedev_major, DICEDEV_MAX_DEVICES);
 err_alloc:
 	return 0;
 }
@@ -756,7 +811,7 @@ static void dicedev_exit(void)
 {
 	pci_unregister_driver(&dicedev_pci_drv);
 	class_unregister(&dicedev_class);
-	unregister_chrdev_region(dicedev_major, 2);
+	unregister_chrdev_region(dicedev_major, DICEDEV_MAX_DEVICES);
 }
 
 module_init(dicedev_init);
