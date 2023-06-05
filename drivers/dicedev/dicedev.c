@@ -145,6 +145,8 @@ static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 
 	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
 
+	return; // todo
+
 	// if we finished a cmd, add a fence
 	if (ctx->state == NONE) {
 		uint32_t fence_no = ctx->dicedev->last_fence;
