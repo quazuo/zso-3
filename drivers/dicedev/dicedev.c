@@ -36,7 +36,8 @@ struct dicedev_device {
 	void __iomem *bar;
 	spinlock_t slock;
 	struct dicedev_buf *slots[DICEDEV_BUF_SLOT_COUNT];
-	uint32_t last_fence;
+	uint32_t last_fence; // last fence sent to the device
+	uint32_t last_completed; // last fence completed, as evidenced by CMD_FENCE_LAST
 };
 
 #define DICEDEV_CTX_CMD_QUEUE_SIZE DICEDEV_MANUAL_FEED_SIZE
@@ -240,6 +241,15 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 		printk(KERN_WARNING "DICEDEV_INTR_MEM_ERROR\n");
 	if (intr & DICEDEV_INTR_SLOT_ERROR)
 		printk(KERN_WARNING "DICEDEV_INTR_SLOT_ERROR\n");
+
+	if (intr & DICEDEV_INTR_FENCE_WAIT) {
+		uint32_t completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
+		dicedev->last_completed = completed;
+		printk("completed: %lu\n", (unsigned long) completed);
+	}
+
+
+
 
 	val = DICEDEV_INTR_FENCE_WAIT | DICEDEV_INTR_FEED_ERROR |
 	      DICEDEV_INTR_CMD_ERROR | DICEDEV_INTR_MEM_ERROR |
