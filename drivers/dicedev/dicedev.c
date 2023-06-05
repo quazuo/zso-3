@@ -159,18 +159,18 @@ static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 		ctx->dicedev->last_fence =
 			(ctx->dicedev->last_fence + 1) % (1 << 28);
 
-		ctx->queue.cmd_no[ctx->queue.last] = fence_no;
-		ctx->queue.last = (ctx->queue.last + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
-		if (ctx->queue.first == ctx->queue.last) {
-			ctx->queue.first =
-				(ctx->queue.first + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
+		ctx->queue.cmd_no[ctx->queue.end] = fence_no;
+		ctx->queue.end = (ctx->queue.end + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
+		if (ctx->queue.begin == ctx->queue.end) {
+			ctx->queue.begin =
+				(ctx->queue.begin + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
 		}
 
-		printk(KERN_WARNING "FENCE SENT: fence_no: %lu, first: %lu, last: %lu\n",
-		       (unsigned long)fence_no, (unsigned long)ctx->queue.first,
-		       (unsigned long)ctx->queue.last);
+		printk(KERN_WARNING "FENCE SENT: fence_no: %lu, begin: %lu, end: %lu\n",
+		       (unsigned long)fence_no, (unsigned long)ctx->queue.begin,
+		       (unsigned long)ctx->queue.end);
 
-		// todo: czy na pewno takie zachowanie jesli first == last?
+		// todo: czy na pewno takie zachowanie jesli begin == end?
 	}
 }
 
@@ -450,11 +450,12 @@ err_bufsize:
 	return err;
 }
 
-static int dicedev_bind_slot(struct dicedev_device *dicedev,
+static int dicedev_bind_slot(struct dicedev_ctx *ctx,
 			     struct dicedev_buf *buf)
 {
 	uint32_t i, cmd;
 	uint64_t pa;
+	struct dicedev_device *dicedev = ctx->dicedev;
 
 	if (buf->bound) {
 		printk(KERN_WARNING "buf already bound\n");
@@ -473,18 +474,18 @@ static int dicedev_bind_slot(struct dicedev_device *dicedev,
 	}
 
 	cmd = DICEDEV_USER_CMD_BIND_SLOT_HEADER(i, buf->seed);
-	dicedev_iocmd(dicedev, cmd);
+	dicedev_iocmd(ctx, cmd);
 
 	cmd = buf->allowed;
-	dicedev_iocmd(dicedev, cmd);
+	dicedev_iocmd(ctx, cmd);
 
 	pa = buf->p_table.table.dma_handle;
 
 	cmd = pa;
-	dicedev_iocmd(dicedev, cmd);
+	dicedev_iocmd(ctx, cmd);
 
 	cmd = pa >> 32;
-	dicedev_iocmd(dicedev, cmd);
+	dicedev_iocmd(ctx, cmd);
 
 	buf->slot = i;
 	buf->bound = true;
