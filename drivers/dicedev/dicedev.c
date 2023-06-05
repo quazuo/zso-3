@@ -27,10 +27,13 @@ struct dicedev_device {
 	void __iomem *bar;
 	spinlock_t slock;
 	struct dicedev_buf *slots[DICEDEV_BUF_SLOT_COUNT];
+	uint32_t cmd_no;
 };
 
 struct dicedev_ctx {
 	struct dicedev_device *dicedev;
+	uint32_t submitted; // todo - na pewno tak?
+	uint32_t completed; // todo - ^
 	bool burnt;
 };
 
@@ -50,6 +53,11 @@ struct dicedev_buf {
 	uint32_t seed;
 	uint32_t slot;
 	bool bound;
+	struct dicedev_ctx *owner;
+	struct cmd_queue {
+		uint32_t cmd_no[DICEDEV_MANUAL_FEED_SIZE];
+		size_t first, last;
+	} queue;
 };
 
 static dev_t dicedev_major;
@@ -66,19 +74,21 @@ static const struct pci_device_id dicedev_pci_ids[] = {
 
 /// cmd utils
 
-static bool dicedev_is_cmd(uint32_t cmd, int cmd_type) {
+static bool dicedev_is_cmd(uint32_t cmd, int cmd_type)
+{
 	return (cmd & DICEDEV_CMD_TYPE_MASK) == cmd_type;
 }
 
-static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot) {
+static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot)
+{
 	uint32_t num_mask = 0xFFFF << 4;
 	uint32_t num = (cmd & num_mask) >> 4;
 
 	uint32_t out_type_mask = 0xF << 20;
 	uint32_t out_type = (cmd & out_type_mask) >> 20;
 
-	printk(KERN_WARNING "num: %lu, out_type: %lu\n",
-	       (unsigned long)num, (unsigned long)out_type);
+	printk(KERN_WARNING "num: %lu, out_type: %lu\n", (unsigned long)num,
+	       (unsigned long)out_type);
 
 	return DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, slot);
 }
@@ -99,13 +109,10 @@ static void dicedev_iow(struct dicedev_device *dicedev, uint32_t reg,
 static void dicedev_iocmd(struct dicedev_device *dicedev, uint32_t cmd)
 {
 	uint32_t queue_free;
-	unsigned long flags;
 
-	spin_lock_irqsave(&dicedev->slock, flags);
 	do {
 		queue_free = dicedev_ior(dicedev, CMD_MANUAL_FREE);
 	} while (queue_free == 0);
-	spin_unlock_irqrestore(&dicedev->slock, flags);
 
 	dicedev_iow(dicedev, CMD_MANUAL_FEED, cmd);
 }
@@ -183,18 +190,19 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 				size_t size, loff_t *off)
 {
-	// todo
+	// todo -- io_uring
 	return 0;
 }
 
 static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 				 size_t size, loff_t *off)
 {
-	// todo
+	// todo -- io_uring
 	return 0;
 }
 
-static long dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long dicedev_buf_ioctl(struct file *file, unsigned int cmd,
+			      unsigned long arg)
 {
 	struct dicedev_buf *buf = file->private_data;
 	struct dicedev_ioctl_seed _arg;
@@ -206,7 +214,7 @@ static long dicedev_buf_ioctl(struct file *file, unsigned int cmd, unsigned long
 	if (cmd != DICEDEV_BUFFER_IOCTL_SEED)
 		return -ENOTTY;
 
-	err = copy_from_user(&_arg, (void *) arg, sizeof(_arg));
+	err = copy_from_user(&_arg, (void *)arg, sizeof(_arg));
 	if (err)
 		return -EFAULT;
 
@@ -224,12 +232,10 @@ static vm_fault_t dicedev_buf_mmap_fault(struct vm_fault *vmf)
 
 	printk(KERN_WARNING "mmap fault %lu %lu\n", vmf->pgoff, buf->size);
 
-	if (vmf->pgoff * DICEDEV_PAGE_SIZE >=
-	    buf->size) // todo - czy to jest ok?
+	if (vmf->pgoff * DICEDEV_PAGE_SIZE >= buf->size)
 		return VM_FAULT_SIGBUS;
 
-	page = virt_to_page(
-		buf->p_table.pages[vmf->pgoff].buf);
+	page = virt_to_page(buf->p_table.pages[vmf->pgoff].buf);
 	get_page(page);
 	vmf->page = page;
 	return 0;
@@ -259,11 +265,9 @@ static int dicedev_open(struct inode *inode, struct file *file)
 	struct dicedev_device *dicedev =
 		container_of(inode->i_cdev, struct dicedev_device, cdev);
 
-	struct dicedev_ctx *ctx =
-		kmalloc(sizeof(struct dicedev_ctx), GFP_KERNEL);
-	if (!ctx) {
+	struct dicedev_ctx *ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
 		return -ENOMEM;
-	}
 
 	ctx->dicedev = dicedev;
 	ctx->burnt = false;
@@ -353,7 +357,7 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 	if (err)
 		return -EFAULT;
 
-	buf = kmalloc(sizeof(struct dicedev_buf), GFP_KERNEL);
+	buf = kzalloc(sizeof(struct dicedev_buf), GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
@@ -362,6 +366,7 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 	buf->seed = DICEDEV_BUF_INIT_SEED;
 	buf->slot = 0;
 	buf->bound = false;
+	buf->owner = ctx;
 
 	if (buf->size > DICEDEV_BUF_MAX_SIZE) {
 		err = -EINVAL;
@@ -390,7 +395,8 @@ err_bufsize:
 	return err;
 }
 
-static int dicedev_bind_slot(struct dicedev_device *dicedev, struct dicedev_buf *buf)
+static int dicedev_bind_slot(struct dicedev_device *dicedev,
+			     struct dicedev_buf *buf)
 {
 	uint32_t i, cmd;
 	uint64_t pa;
@@ -486,8 +492,8 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		loff_t page_off = (_arg.addr + off) % DICEDEV_PAGE_SIZE;
 		uint32_t *cmd = in_buf->p_table.pages[page_ndx].buf + page_off;
 
-		printk(KERN_WARNING "ndx: %lu, off: %lu, cmd: %lu\n",
-		       page_ndx, (unsigned long)page_off, (unsigned long)(*cmd));
+		printk(KERN_WARNING "ndx: %lu, off: %lu, cmd: %lu\n", page_ndx,
+		       (unsigned long)page_off, (unsigned long)(*cmd));
 
 		if (dicedev_is_cmd(*cmd, DICEDEV_USER_CMD_TYPE_GET_DIE))
 			*cmd = dicedev_cmd_get_die_add_slot(*cmd, out_buf_slot);
@@ -507,7 +513,7 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 	int err;
 	struct dicedev_ioctl_wait _arg;
 
-	err = copy_from_user(&_arg, (void *) arg, sizeof(_arg));
+	err = copy_from_user(&_arg, (void *)arg, sizeof(_arg));
 	if (err)
 		return -EFAULT;
 
@@ -535,13 +541,15 @@ static long dicedev_ioctl(struct file *file, unsigned int cmd,
 {
 	int err = 0;
 	struct dicedev_ctx *ctx = file->private_data;
+	if (!ctx)
+		return -EINVAL;
 
 	switch (cmd) {
 	case DICEDEV_IOCTL_CREATE_SET:
 		err = dicedev_ioctl_crtset(ctx, arg);
 		break;
 	case DICEDEV_IOCTL_RUN:
-		if (ctx && ctx->burnt) {
+		if (ctx->burnt) {
 			err = -EIO;
 			break;
 		}
@@ -604,8 +612,7 @@ static int dicedev_probe(struct pci_dev *pdev,
 	if (err)
 		goto out_enable;
 
-	err = dma_set_mask_and_coherent(&pdev->dev,
-					DMA_BIT_MASK(40)); // todo 40?
+	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(40));
 	if (err)
 		goto out_mask;
 
