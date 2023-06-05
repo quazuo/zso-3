@@ -152,37 +152,38 @@ static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 static void dicedev_user_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 {
 	uint32_t queue_free;
+	uint32_t fence_no;
+	uint32_t fence_cmd;
 
 	dicedev_iocmd(ctx, cmd);
 
-	// if we finished a cmd, add a fence
-	if (ctx->state == NONE) {
-		uint32_t fence_no;
-		uint32_t fence_cmd = DICEDEV_USER_CMD_FENCE_HEADER(fence_no);
+	if (ctx->state != NONE)
+		return;
 
-		do {
-			queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
-		} while (queue_free == 0);
+	do {
+		queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
+	} while (queue_free == 0);
 
-		ctx->dicedev->last_fence =
-			(ctx->dicedev->last_fence + 1) % (1 << 28);
-		fence_no = ctx->dicedev->last_fence;
+	ctx->dicedev->last_fence =
+		(ctx->dicedev->last_fence + 1) % (1 << 28);
 
-		dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, fence_cmd);
+	fence_no = ctx->dicedev->last_fence;
+	fence_cmd = DICEDEV_USER_CMD_FENCE_HEADER(fence_no);
 
-		ctx->queue.cmd_no[ctx->queue.end] = fence_no;
-		ctx->queue.end = (ctx->queue.end + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
-		if (ctx->queue.begin == ctx->queue.end) {
-			ctx->queue.begin =
-				(ctx->queue.begin + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
-		}
+	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, fence_cmd);
 
-		printk(KERN_WARNING "FENCE SENT: fence_no: %lu, begin: %lu, end: %lu\n",
-		       (unsigned long)fence_no, (unsigned long)ctx->queue.begin,
-		       (unsigned long)ctx->queue.end);
-
-		// todo: czy na pewno takie zachowanie jesli begin == end?
+	ctx->queue.cmd_no[ctx->queue.end] = fence_no;
+	ctx->queue.end = (ctx->queue.end + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
+	if (ctx->queue.begin == ctx->queue.end) {
+		ctx->queue.begin =
+			(ctx->queue.begin + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
 	}
+
+	printk(KERN_WARNING "FENCE SENT: fence_no: %lu, begin: %lu, end: %lu\n",
+	       (unsigned long)fence_no, (unsigned long)ctx->queue.begin,
+	       (unsigned long)ctx->queue.end);
+
+	// todo: czy na pewno takie zachowanie jesli begin == end?
 }
 
 static int dicedev_enable(struct pci_dev *pdev)
