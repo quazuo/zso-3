@@ -143,23 +143,31 @@ static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 		ctx->state = NONE;
 	}
 
-	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
+	printk(KERN_WARNING "state: %d\n", ctx->state);
 
-	return; // todo
+	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
+}
+
+static void dicedev_user_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
+{
+	uint32_t queue_free;
+
+	dicedev_iocmd(ctx, cmd);
 
 	// if we finished a cmd, add a fence
 	if (ctx->state == NONE) {
-		uint32_t fence_no = ctx->dicedev->last_fence;
+		uint32_t fence_no;
 		uint32_t fence_cmd = DICEDEV_USER_CMD_FENCE_HEADER(fence_no);
 
 		do {
 			queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
 		} while (queue_free == 0);
 
-		dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, fence_cmd);
-
 		ctx->dicedev->last_fence =
 			(ctx->dicedev->last_fence + 1) % (1 << 28);
+		fence_no = ctx->dicedev->last_fence;
+
+		dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, fence_cmd);
 
 		ctx->queue.cmd_no[ctx->queue.end] = fence_no;
 		ctx->queue.end = (ctx->queue.end + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
@@ -192,8 +200,8 @@ static int dicedev_enable(struct pci_dev *pdev)
 	dicedev_iow(dicedev, DICEDEV_INTR_ENABLE, enabled_intrs);
 
 	dicedev_iow(dicedev, DICEDEV_ENABLE, 1);
-	dicedev_iow(dicedev, DICEDEV_CMD_FENCE_LAST, 0); // todo: na pewno 0?
-	dicedev_iow(dicedev, DICEDEV_CMD_FENCE_WAIT, 0); // todo: ^
+	dicedev_iow(dicedev, DICEDEV_CMD_FENCE_LAST, 0);
+	dicedev_iow(dicedev, DICEDEV_CMD_FENCE_WAIT, 0);
 
 	return 0;
 }
@@ -558,7 +566,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 
 		// todo unfinished
 
-		dicedev_iocmd(ctx, *cmd);
+		dicedev_user_iocmd(ctx, *cmd);
 	}
 
 	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
