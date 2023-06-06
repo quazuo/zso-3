@@ -535,6 +535,9 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	struct dicedev_buf *in_buf, *out_buf;
 	uint32_t out_buf_slot;
 
+	if (ctx->burnt)
+		return -EIO;
+
 	err = copy_from_user(&_arg, (void *)arg, sizeof(_arg));
 	if (err)
 		return -EFAULT;
@@ -589,10 +592,38 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	int err;
 	struct dicedev_ioctl_wait _arg;
+	uint32_t awaited_cmd_ndx, awaited_cmd_no;
+
+	if (ctx->burnt)
+		return -EIO;
 
 	err = copy_from_user(&_arg, (void *)arg, sizeof(_arg));
 	if (err)
 		return -EFAULT;
+
+	if (arg > DICEDEV_CTX_CMD_QUEUE_SIZE) {
+		// if we're trying to wait for more commands than the queue
+		// can hold, then there's definitely nothing to wait for.
+		return 0;
+	}
+
+	if (ctx->queue.end - ctx->queue.begin < arg) {
+		// if the above case holds, then it means that the number of
+		// commands about which we don't know if they were completed
+		// or not, is less than arg. this means that there's nothing
+		// to wait for.
+		return 0;
+	}
+
+	awaited_cmd_ndx = ctx->queue.end + DICEDEV_CTX_CMD_QUEUE_SIZE - arg;
+	awaited_cmd_ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
+	awaited_cmd_no = ctx->queue.cmd_no[awaited_cmd_ndx];
+
+	if (awaited_cmd_no <= ctx->dicedev->last_completed)
+		return 0;
+
+	// now we actually have to wait.
+	while (awaited_cmd_no > ctx->dicedev->last_completed) { }
 
 	// todo
 
@@ -626,10 +657,6 @@ static long dicedev_ioctl(struct file *file, unsigned int cmd,
 		err = dicedev_ioctl_crtset(ctx, arg);
 		break;
 	case DICEDEV_IOCTL_RUN:
-		if (ctx->burnt) {
-			err = -EIO;
-			break;
-		}
 		err = dicedev_ioctl_run(ctx, arg);
 		break;
 	case DICEDEV_IOCTL_WAIT:
