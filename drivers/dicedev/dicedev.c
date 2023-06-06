@@ -610,6 +610,9 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 
 	out_buf = f.file->private_data;
 
+	if (in_buf->owner != ctx || out_buf->owner != ctx)
+		return -EINVAL;
+
 	out_buf_slot = dicedev_bind_slot(ctx, out_buf);
 
 	if (out_buf_slot == -1)
