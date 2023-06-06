@@ -578,6 +578,8 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	struct dicedev_buf *in_buf, *out_buf;
 	uint32_t out_buf_slot;
 
+	printk(KERN_WARNING "dicedev_ioctl_run\n");
+
 	if (ctx->burnt)
 		return -EIO;
 
