@@ -582,7 +582,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 {
 	int err;
 	struct dicedev_ioctl_run _arg;
-	struct file *file;
+	struct fd f;
 	struct dicedev_buf *in_buf, *out_buf;
 	uint32_t out_buf_slot;
 
@@ -598,19 +598,19 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	if (_arg.addr % 4 || _arg.size % 4)
 		return -EINVAL;
 
-	file = fget(_arg.cfd);
-	if (!file)
+	f = fdget(_arg.cfd);
+	if (!f.file)
 		return -EINVAL;
 
-	in_buf = file->private_data;
+	in_buf = f.file->private_data;
 	if (!in_buf)
 		return -ENOENT;
 
-	file = fget(_arg.bfd);
-	if (!file)
+	f = fdget(_arg.bfd);
+	if (!f.file)
 		return -EINVAL;
 
-	out_buf = file->private_data;
+	out_buf = f.file->private_data;
 	if (!out_buf)
 		return -ENOENT;
 
