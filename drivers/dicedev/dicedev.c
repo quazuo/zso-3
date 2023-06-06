@@ -635,8 +635,12 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 			uint32_t out_type = (*cmd & out_type_mask) >> 20;
 
 			*cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, out_buf_slot);
+
 			dice_requested += num;
 		}
+
+		printk(KERN_WARNING "req: %lu size: %lu\n", (unsigned long) dice_requested,
+		       (unsigned long) out_buf->size);
 
 		if (dice_requested > out_buf->size) {
 			ctx->burnt = true;
