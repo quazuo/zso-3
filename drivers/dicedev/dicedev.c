@@ -629,10 +629,10 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 
 		if (dicedev_is_cmd(*cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
 			uint32_t num_mask = 0xFFFF << 4;
-			uint32_t num = (cmd & num_mask) >> 4;
+			uint32_t num = (*cmd & num_mask) >> 4;
 
 			uint32_t out_type_mask = 0xF << 20;
-			uint32_t out_type = (cmd & out_type_mask) >> 20;
+			uint32_t out_type = (*cmd & out_type_mask) >> 20;
 
 			*cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, slot);
 			dice_requested += num;
