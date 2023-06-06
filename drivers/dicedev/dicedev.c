@@ -219,46 +219,6 @@ static int dicedev_disable(struct pci_dev *pdev)
 	return 0;
 }
 
-static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
-{
-	// find the ctx that submitted the cmd with cmd_no
-
-	for (size_t i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
-		struct dicedev_ctx *owner;
-		size_t ndx;
-
-		if (!dicedev->slots[i])
-			continue;
-
-		owner = dicedev->slots[i]->owner;
-		ndx = owner->queue.begin;
-
-		while (ndx != owner->queue.end) {
-			printk(KERN_WARNING "lookin' at: %lu\n",
-			       (unsigned long) owner->queue.cmd_no[ndx]);
-
-			if (owner->queue.cmd_no[ndx] == cmd_no) {
-				owner->burnt = true;
-				return;
-			}
-
-			ndx++;
-			ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
-		}
-
-		printk(KERN_WARNING "lookin' at: %lu\n",
-		       (unsigned long) owner->queue.cmd_no[ndx]);
-
-		if (owner->queue.cmd_no[ndx] == cmd_no) {
-			owner->burnt = true;
-			return;
-		}
-	}
-
-	printk(KERN_WARNING "burn victim not found... nicht gut... cmd_no: %lu\n",
-	       (unsigned long) cmd_no);
-}
-
 static void dicedev_update_fence(struct dicedev_device *dicedev)
 {
 	uint32_t last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
@@ -611,12 +571,12 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	if (in_buf->owner != ctx || out_buf->owner != ctx)
 		return -EINVAL;
 
-	mutex_lock(&dicedev->mutex);
+	mutex_lock(&ctx->dicedev->mutex);
 
 	out_buf_slot = dicedev_bind_slot(ctx, out_buf);
 
 	if (out_buf_slot == -1) {
-		mutex_unlock(&dicedev->mutex);
+		mutex_unlock(&ctx->dicedev->mutex);
 		return -EINVAL;
 	}
 
@@ -659,7 +619,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
 
 	ctx->dicedev->running_ctx = NULL;
-	mutex_unlock(&dicedev->mutex);
+	mutex_unlock(&ctx->dicedev->mutex);
 
 	return 0;
 }
