@@ -35,9 +35,11 @@ struct dicedev_device {
 	struct device *dev;
 	void __iomem *bar;
 	spinlock_t slock;
+	struct mutex mutex;
 	struct dicedev_buf *slots[DICEDEV_BUF_SLOT_COUNT];
 	uint32_t last_fence; // last fence sent to the device
 	uint32_t last_completed; // last fence completed, as evidenced by CMD_FENCE_LAST
+	struct dicedev_ctx *running_ctx;
 };
 
 #define DICEDEV_CTX_CMD_QUEUE_SIZE DICEDEV_MANUAL_FEED_SIZE
@@ -91,17 +93,6 @@ static bool dicedev_is_cmd(uint32_t cmd, int cmd_type)
 {
 	return (cmd & DICEDEV_CMD_TYPE_MASK) == cmd_type;
 }
-
-/*static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot)
-{
-	uint32_t num_mask = 0xFFFF << 4;
-	uint32_t num = (cmd & num_mask) >> 4;
-
-	uint32_t out_type_mask = 0xF << 20;
-	uint32_t out_type = (cmd & out_type_mask) >> 20;
-
-	return DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, slot);
-}*/
 
 /// misc stuff
 
@@ -268,15 +259,24 @@ static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
 	       (unsigned long) cmd_no);
 }
 
+static void dicedev_update_fence(struct dicedev_device *dicedev)
+{
+	uint32_t last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
+	dicedev->last_completed = last_completed;
+}
+
 /// irq handler
 
 static irqreturn_t dicedev_isr(int irq, void *opaque)
 {
 	struct dicedev_device *dicedev = opaque;
 	uint32_t intr, val;
+	unsigned long slock_flags;
 
 	if (dicedev->pdev->irq != irq)
 		return IRQ_NONE;
+
+	spin_lock_irqsave(&dicedev->slock, slock_flags);
 
 	intr = dicedev_ior(dicedev, DICEDEV_INTR);
 
@@ -292,15 +292,13 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 		printk(KERN_WARNING "DICEDEV_INTR_SLOT_ERROR\n");
 
 	if (intr & DICEDEV_INTR_FENCE_WAIT) {
-		uint32_t last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
-		dicedev->last_completed = last_completed;
+		dicedev_update_fence(dicedev);
 	}
 
 	if (intr & DICEDEV_INTR_CMD_ERROR || intr & DICEDEV_INTR_MEM_ERROR) {
-		uint32_t last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
-		uint32_t err_cmd_no = last_completed + 1;
-
-		dicedev_burn_ctx(dicedev, err_cmd_no);
+		if (dicedev->running_ctx) {
+			dicedev->running_ctx->burnt = true;
+		}
 	}
 
 	val = DICEDEV_INTR_FENCE_WAIT | DICEDEV_INTR_FEED_ERROR |
@@ -309,7 +307,7 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 
 	dicedev_iow(dicedev, DICEDEV_INTR, val);
 
-	// todo
+	spin_unlock_irqrestore(&dicedev->slock, slock_flags);
 
 	return IRQ_HANDLED;
 }
@@ -406,9 +404,8 @@ static int dicedev_open(struct inode *inode, struct file *file)
 
 static int dicedev_release(struct inode *inode, struct file *file)
 {
-	if (file->private_data) {
+	if (file->private_data)
 		kfree(file->private_data);
-	}
 
 	return 0;
 }
@@ -614,10 +611,16 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	if (in_buf->owner != ctx || out_buf->owner != ctx)
 		return -EINVAL;
 
+	mutex_lock(&dicedev->mutex);
+
 	out_buf_slot = dicedev_bind_slot(ctx, out_buf);
 
-	if (out_buf_slot == -1)
-		return -EINVAL; // todo - it shouldnt be like that but its kinda a placeholder
+	if (out_buf_slot == -1) {
+		mutex_unlock(&dicedev->mutex);
+		return -EINVAL;
+	}
+
+	ctx->dicedev->running_ctx = ctx;
 
 	for (size_t off = 0; off < _arg.size; off += sizeof(uint32_t)) {
 		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
@@ -654,6 +657,9 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	}
 
 	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
+
+	ctx->dicedev->running_ctx = NULL;
+	mutex_unlock(&dicedev->mutex);
 
 	return 0;
 }
@@ -722,6 +728,8 @@ static long dicedev_ioctl(struct file *file, unsigned int cmd,
 	if (!ctx)
 		return -EINVAL;
 
+	dicedev_update_fence(ctx->dicedev);
+
 	switch (cmd) {
 	case DICEDEV_IOCTL_CREATE_SET:
 		err = dicedev_ioctl_crtset(ctx, arg);
@@ -764,8 +772,9 @@ static int dicedev_probe(struct pci_dev *pdev,
 	pci_set_drvdata(pdev, dev);
 	dev->pdev = pdev;
 
-	// init spinlock
+	// init locks
 	spin_lock_init(&dev->slock);
+	mutex_init(&dev->mutex);
 
 	// allocate free index
 	for (i = 0; i < DICEDEV_MAX_DEVICES; i++) {
