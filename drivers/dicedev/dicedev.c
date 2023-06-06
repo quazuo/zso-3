@@ -100,9 +100,6 @@ static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot)
 	uint32_t out_type_mask = 0xF << 20;
 	uint32_t out_type = (cmd & out_type_mask) >> 20;
 
-	printk(KERN_WARNING "num: %lu, out_type: %lu\n", (unsigned long)num,
-	       (unsigned long)out_type);
-
 	return DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, slot);
 }
 
@@ -248,6 +245,14 @@ static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
 
 			ndx++;
 			ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
+		}
+
+		printk(KERN_WARNING "lookin' at: %lu\n",
+		       (unsigned long) owner->queue.cmd_no[ndx]);
+
+		if (owner->queue.cmd_no[ndx] == cmd_no) {
+			owner->burnt = true;
+			return;
 		}
 	}
 
@@ -600,7 +605,6 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		return -ENOENT;
 
 	out_buf_slot = dicedev_bind_slot(ctx, out_buf);
-	printk(KERN_WARNING "out_buf_slot: %d\n", out_buf_slot);
 
 	if (out_buf_slot == -1)
 		return -EINVAL; // todo - it shouldnt be like that but its a placeholder
@@ -616,7 +620,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		if (dicedev_is_cmd(*cmd, DICEDEV_USER_CMD_TYPE_GET_DIE))
 			*cmd = dicedev_cmd_get_die_add_slot(*cmd, out_buf_slot);
 
-		// todo unfinished
+		// todo unfinished?
 
 		dicedev_user_iocmd(ctx, *cmd);
 	}
