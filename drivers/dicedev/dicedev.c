@@ -238,6 +238,9 @@ static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
 		ndx = owner->queue.begin;
 
 		while (ndx != owner->queue.end) {
+			printk(KERN_WARNING "lookin' at: %lu\n",
+			       (unsigned long) owner->queue.cmd_no[ndx]);
+
 			if (owner->queue.cmd_no[ndx] == cmd_no) {
 				owner->burnt = true;
 				return;
@@ -248,7 +251,8 @@ static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
 		}
 	}
 
-	printk(KERN_WARNING "burn victim not found... nicht gut...\n");
+	printk(KERN_WARNING "burn victim not found... nicht gut... cmd_no: %lu\n",
+	       (unsigned long) cmd_no);
 }
 
 /// irq handler
