@@ -146,11 +146,19 @@ static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
 }
 
-static void dicedev_user_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
+static void dicedev_user_iocmd(struct dicedev_ctx *ctx, struct dicedev_buf *buf,
+			       uint32_t cmd)
 {
 	uint32_t queue_free;
 	uint32_t fence_no;
 	uint32_t fence_cmd;
+
+	if (ctx->state == GET_DIE_0) {
+		if ((buf->allowed & cmd) != cmd) {
+			ctx->burnt = true;
+			return;
+		}
+	}
 
 	dicedev_iocmd(ctx, cmd);
 
@@ -161,8 +169,8 @@ static void dicedev_user_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 		queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
 	} while (queue_free == 0);
 
-	ctx->dicedev->last_fence =
-		(ctx->dicedev->last_fence + 1) % (1 << 28);
+	ctx->dicedev->last_fence++;
+	ctx->dicedev->last_fence %= 1 << 28;
 
 	fence_no = ctx->dicedev->last_fence;
 	fence_cmd = DICEDEV_USER_CMD_FENCE_HEADER(fence_no);
@@ -624,10 +632,16 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 
 		// todo unfinished?
 
-		dicedev_user_iocmd(ctx, *cmd);
+		dicedev_user_iocmd(ctx, in_buf, *cmd);
+
+		if (ctx->burnt)
+			break;
 	}
 
 	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
+
+	if (ctx->burnt)
+		return -EIO;
 
 	return 0;
 }
