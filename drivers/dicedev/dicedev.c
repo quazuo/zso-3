@@ -599,20 +599,16 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		return -EINVAL;
 
 	f = fdget(_arg.cfd);
-	if (!f.file)
+	if (!f.file || !f.file->private_data || f.file->f_op != &dicedev_buf_fops)
 		return -EINVAL;
 
 	in_buf = f.file->private_data;
-	if (!in_buf)
-		return -ENOENT;
 
 	f = fdget(_arg.bfd);
-	if (!f.file)
+	if (!f.file || !f.file->private_data || f.file->f_op != &dicedev_buf_fops)
 		return -EINVAL;
 
 	out_buf = f.file->private_data;
-	if (!out_buf)
-		return -ENOENT;
 
 	out_buf_slot = dicedev_bind_slot(ctx, out_buf);
 
