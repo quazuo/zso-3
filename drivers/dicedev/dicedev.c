@@ -234,7 +234,7 @@ static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
 		if (!dicedev->slots[i])
 			continue;
 
-		owner = dicedev->slots[i].owner;
+		owner = dicedev->slots[i]->owner;
 		ndx = owner->queue.begin;
 
 		while (ndx != owner->queue.end) {
