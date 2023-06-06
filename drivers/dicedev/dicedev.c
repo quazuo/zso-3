@@ -92,7 +92,7 @@ static bool dicedev_is_cmd(uint32_t cmd, int cmd_type)
 	return (cmd & DICEDEV_CMD_TYPE_MASK) == cmd_type;
 }
 
-static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot)
+/*static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot)
 {
 	uint32_t num_mask = 0xFFFF << 4;
 	uint32_t num = (cmd & num_mask) >> 4;
@@ -101,7 +101,7 @@ static uint32_t dicedev_cmd_get_die_add_slot(uint32_t cmd, uint32_t slot)
 	uint32_t out_type = (cmd & out_type_mask) >> 20;
 
 	return DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, slot);
-}
+}*/
 
 /// misc stuff
 
