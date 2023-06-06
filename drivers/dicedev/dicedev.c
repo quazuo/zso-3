@@ -25,7 +25,7 @@ MODULE_LICENSE("GPL");
  * wait
  * error checking komend
  * spalanie kontekstu
- * zamienic do...while(manual_feed == 0) na cos lepszego xd
+ * zamienic do...while(...) na cos lepszego xd (aktywne oczekiwanie)
  */
 
 struct dicedev_device {
@@ -173,10 +173,13 @@ static void dicedev_user_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, fence_cmd);
 
 	ctx->queue.cmd_no[ctx->queue.end] = fence_no;
-	ctx->queue.end = (ctx->queue.end + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
+
+	ctx->queue.end++;
+	ctx->queue.end %= DICEDEV_CTX_CMD_QUEUE_SIZE;
+
 	if (ctx->queue.begin == ctx->queue.end) {
-		ctx->queue.begin =
-			(ctx->queue.begin + 1) % DICEDEV_CTX_CMD_QUEUE_SIZE;
+		ctx->queue.begin++;
+		ctx->queue.begin %= DICEDEV_CTX_CMD_QUEUE_SIZE;
 	}
 
 	printk(KERN_WARNING "FENCE SENT: fence_no: %lu, begin: %lu, end: %lu\n",
@@ -220,6 +223,34 @@ static int dicedev_disable(struct pci_dev *pdev)
 	return 0;
 }
 
+static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
+{
+	// find the ctx that submitted the cmd with cmd_no
+
+	for (size_t i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
+		struct dicedev_ctx *owner;
+		size_t ndx;
+
+		if (!dicedev->slots[i])
+			continue;
+
+		owner = dicedev->slots[i].owner;
+		ndx = owner->queue.begin;
+
+		while (ndx != owner->queue.end) {
+			if (owner->queue.cmd_no[ndx] == cmd_no) {
+				owner->burnt = true;
+				return;
+			}
+
+			ndx++;
+			ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
+		}
+	}
+
+	printk(KERN_WARNING "burn victim not found... nicht gut...\n");
+}
+
 /// irq handler
 
 static irqreturn_t dicedev_isr(int irq, void *opaque)
@@ -244,13 +275,16 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 		printk(KERN_WARNING "DICEDEV_INTR_SLOT_ERROR\n");
 
 	if (intr & DICEDEV_INTR_FENCE_WAIT) {
-		uint32_t completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
-		dicedev->last_completed = completed;
-		printk("completed: %lu\n", (unsigned long) completed);
+		uint32_t last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
+		dicedev->last_completed = last_completed;
 	}
 
+	if (intr & DICEDEV_INTR_CMD_ERROR || intr & DICEDEV_INTR_MEM_ERROR) {
+		uint32_t last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
+		uint32_t err_cmd_no = last_completed + 1;
 
-
+		dicedev_burn_ctx(dicedev, err_cmd_no);
+	}
 
 	val = DICEDEV_INTR_FENCE_WAIT | DICEDEV_INTR_FEED_ERROR |
 	      DICEDEV_INTR_CMD_ERROR | DICEDEV_INTR_MEM_ERROR |
