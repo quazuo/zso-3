@@ -154,10 +154,10 @@ static void dicedev_user_iocmd(struct dicedev_ctx *ctx, struct dicedev_buf *buf,
 	uint32_t fence_cmd;
 
 	if (ctx->state == GET_DIE_0) {
-		if ((buf->allowed & cmd) != cmd) {
+		if ((buf->allowed & cmd) != cmd)
 			ctx->burnt = true;
-			return;
-		}
+
+		// todo -- return? pozwolic wysylac reszte czy nie?
 	}
 
 	dicedev_iocmd(ctx, cmd);
@@ -639,9 +639,6 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	}
 
 	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
-
-	if (ctx->burnt)
-		return -EIO;
 
 	return 0;
 }
