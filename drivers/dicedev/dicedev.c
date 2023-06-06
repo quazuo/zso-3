@@ -585,6 +585,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	struct fd f;
 	struct dicedev_buf *in_buf, *out_buf;
 	uint32_t out_buf_slot;
+	size_t dice_requested = 0;
 
 	printk(KERN_WARNING "dicedev_ioctl_run\n");
 
@@ -616,7 +617,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	out_buf_slot = dicedev_bind_slot(ctx, out_buf);
 
 	if (out_buf_slot == -1)
-		return -EINVAL; // todo - it shouldnt be like that but its a placeholder
+		return -EINVAL; // todo - it shouldnt be like that but its kinda a placeholder
 
 	for (size_t off = 0; off < _arg.size; off += sizeof(uint32_t)) {
 		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
@@ -626,10 +627,21 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		printk(KERN_WARNING "ndx: %lu, off: %lu, cmd: %lu\n", page_ndx,
 		       (unsigned long)page_off, (unsigned long)(*cmd));
 
-		if (dicedev_is_cmd(*cmd, DICEDEV_USER_CMD_TYPE_GET_DIE))
-			*cmd = dicedev_cmd_get_die_add_slot(*cmd, out_buf_slot);
+		if (dicedev_is_cmd(*cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
+			uint32_t num_mask = 0xFFFF << 4;
+			uint32_t num = (cmd & num_mask) >> 4;
 
-		// todo unfinished?
+			uint32_t out_type_mask = 0xF << 20;
+			uint32_t out_type = (cmd & out_type_mask) >> 20;
+
+			*cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, slot);
+			dice_requested += num;
+		}
+
+		if (dice_requested > out_buf->size) {
+			ctx->burnt = true;
+			break;
+		}
 
 		dicedev_user_iocmd(ctx, in_buf, *cmd);
 
