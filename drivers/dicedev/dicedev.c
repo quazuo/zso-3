@@ -604,6 +604,8 @@ static void dicedev_unbind_slot(struct dicedev_device *dicedev, uint32_t slot)
 	uint32_t cmd = DICEDEV_USER_CMD_UNBIND_SLOT_HEADER(slot);
 	dicedev_iow(dicedev, CMD_MANUAL_FEED, cmd);
 
+	printk(KERN_WARNING "unbind_slot\n");
+
 	if (buf)
 		buf->bound = false;
 
