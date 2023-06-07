@@ -285,6 +285,13 @@ static void dicedev_update_fence(struct dicedev_device *dicedev)
 	dicedev->last_completed = last_completed;
 }
 
+static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
+{
+	struct dma_buf buf;
+	buf.buf = dma_alloc_coherent(dev, size, &buf.dma_handle, GFP_KERNEL);
+	return buf;
+}
+
 static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
 	struct device *dev = &ctx->dicedev->pdev->dev;
@@ -616,13 +623,6 @@ static int dicedev_release(struct inode *inode, struct file *file)
 
 	kfree(ctx);
 	return 0;
-}
-
-static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
-{
-	struct dma_buf buf;
-	buf.buf = dma_alloc_coherent(dev, size, &buf.dma_handle, GFP_KERNEL);
-	return buf;
 }
 
 static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
