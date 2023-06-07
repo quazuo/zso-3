@@ -335,7 +335,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	if (!cmd_buf)
 		return -ENOMEM;
 
-	ret = copy_from_user(_buf, buf, size);
+	ret = copy_from_user(cmd_buf, buf, size);
 	if (ret)
 		goto copy_err;
 
