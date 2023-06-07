@@ -73,6 +73,7 @@ struct dicedev_buf {
 	uint32_t slot;
 	bool bound;
 	struct dicedev_ctx *owner;
+	loff_t read_off; // for io_uring purposes
 };
 
 static dev_t dicedev_major;
@@ -343,11 +344,33 @@ static void dicedev_unbind_slot(struct dicedev_device *dicedev, uint32_t slot);
 static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 				size_t size, loff_t *off)
 {
-	// todo -- io_uring
+	int err;
+	struct dicedev_buf *dicedev_buf;
+	loff_t read_bytes = 0;
 
-	printk(KERN_WARNING "off: %lu\n", (unsigned long)*off);
+	if (size % sizeof(struct dice))
+		return -EINVAL;
 
-	*off += size;
+	dicedev_buf = file->private_data;
+	if (!buf)
+		return -EINVAL;
+
+	while (read_bytes < size) {
+		loff_t curr_off = dicedev_buf->read_off + read_bytes;
+		pgoff_t page_ndx = curr_off / DICEDEV_PAGE_SIZE;
+		loff_t page_off = curr_off % DICEDEV_PAGE_SIZE;
+		void *page = dicedev_buf->p_table.pages[page_ndx];
+		size_t curr_read_n = DICEDEV_PAGE_SIZE - page_off;
+
+		err = copy_to_user(buf + read_bytes, page + page_off, curr_read_n);
+		if (err)
+			return -EFAULT;
+
+		read_bytes += curr_read_n;
+		*off += curr_read_n;
+		dicedev_buf->read_off += curr_read_n;
+	}
+
 	return size;
 }
 
