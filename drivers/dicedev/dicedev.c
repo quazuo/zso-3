@@ -361,12 +361,12 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 		void *page = dicedev_buf->p_table.pages[page_ndx].buf;
 		size_t curr_read_n = DICEDEV_PAGE_SIZE - page_off;
 
-		err = copy_to_user(buf + read_bytes, page + page_off, curr_read_n);
-		if (err)
-			return -EFAULT;
+//		err = copy_to_user(buf + read_bytes, page + page_off, curr_read_n);
+//		if (err)
+//			return -EFAULT;
 
 		read_bytes += curr_read_n;
-		*off += curr_read_n;
+		if (off) *off += curr_read_n;
 		dicedev_buf->read_off += curr_read_n;
 	}
 
@@ -427,7 +427,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	ctx->dicedev->running_ctx = NULL;
 	mutex_unlock(&ctx->dicedev->mutex);
 
-	*off += size;
+	if(off) *off += size;
 	ret = size;
 
 copy_err:
