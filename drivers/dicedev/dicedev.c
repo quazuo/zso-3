@@ -476,7 +476,7 @@ static int dicedev_release(struct inode *inode, struct file *file)
 	struct dicedev_ctx *ctx = file->private_data;
 
 	if (!file->private_data)
-		return;
+		return -EINVAL;
 
 	for (int i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
 		struct dicedev_buf *buf = ctx->dicedev->slots[i];
@@ -487,7 +487,6 @@ static int dicedev_release(struct inode *inode, struct file *file)
 	}
 
 	kfree(ctx);
-
 	return 0;
 }
 
