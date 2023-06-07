@@ -290,7 +290,7 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 		} else {
 			uint32_t last_completed =
 				dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
-			dicedev_burn_ctx(last_completed);
+			dicedev_burn_ctx(dicedev, last_completed);
 		}
 	}
 
@@ -351,7 +351,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 			uint32_t out_type_mask = 0xF << 20;
 			uint32_t out_type = (cmd & out_type_mask) >> 20;
 
-			cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, out_buf_slot);
+			cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, dicedev_buf->slot);
 		}
 
 		dicedev_user_iocmd(ctx, dicedev_buf, cmd);
