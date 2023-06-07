@@ -73,6 +73,7 @@ struct dicedev_buf {
 	uint32_t slot;
 	bool bound;
 	struct dicedev_ctx *owner;
+	loff_t out_off; // used to remember the offset for buffors used for the device's output
 };
 
 static dev_t dicedev_major;
@@ -94,6 +95,28 @@ static bool dicedev_is_cmd(uint32_t cmd, int cmd_type)
 	return (cmd & DICEDEV_CMD_TYPE_MASK) == cmd_type;
 }
 
+static void dicedev_get_die_vars(uint32_t cmd, uint32_t *num, uint32_t *out_type,
+				 uint32_t *slot)
+{
+	uint32_t num_mask = 0xFFFF << 4;
+	uint32_t out_type_mask = 0xF << 20;
+	uint32_t slot_mask = 0xF << 24;
+
+	if (num)
+		*num = (cmd & num_mask) >> 4;
+	if (out_type)
+		*out_type = (cmd & out_type_mask) >> 20;
+	if (slot)
+		*slot = (cmd & slot_mask) >> 24;
+}
+
+static void dicedev_new_set_vars(uint32_t cmd, uint32_t *slot) {
+	uint32_t slot_mask = 0xF << 4;
+
+	if (slot)
+		*slot = (cmd & slot_mask) >> 4;
+}
+
 /// misc stuff
 
 static uint32_t dicedev_ior(struct dicedev_device *dicedev, uint32_t reg)
@@ -110,6 +133,8 @@ static void dicedev_iow(struct dicedev_device *dicedev, uint32_t reg,
 static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 {
 	uint32_t queue_free;
+	uint32_t num, slot;
+	struct dicedev_buf *buf;
 
 	do {
 		queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
@@ -133,6 +158,20 @@ static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 	}
 
 	printk(KERN_WARNING "state: %d\n", ctx->state);
+
+	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
+		dicedev_get_die_vars(cmd, &num, NULL, &slot);
+		buf = ctx->dicededv->slots[slot];
+
+		buf->out_off += num;
+		buf->out_off %= buf->size;
+
+	} else if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_NEW_SET)) {
+		dicedev_new_set_vars(cmd, &slot);
+		buf = ctx->dicededv->slots[slot];
+
+		buf->out_off = 0;
+	}
 
 	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
 }
@@ -254,6 +293,21 @@ static void dicedev_update_fence(struct dicedev_device *dicedev)
 	dicedev->last_completed = last_completed;
 }
 
+static uint32_t dicedev_update_cmd(uint32_t cmd, uint32_t buf_slot)
+{
+	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
+		uint32_t num, out_type;
+		dicedev_get_die_vars(cmd, &num, &out_type, NULL);
+		return DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, buf_slot);
+	}
+
+	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_NEW_SET)) {
+		return DICEDEV_USER_CMD_NEW_SET_WSLOT(buf_slot);
+	}
+
+	return cmd;
+}
+
 /// irq handler
 
 static irqreturn_t dicedev_isr(int irq, void *opaque)
@@ -314,7 +368,11 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 				size_t size, loff_t *off)
 {
 	// todo -- io_uring
-	return 0;
+
+	printk(KERN_WARNING "off: %lu\n", (unsigned long)*off);
+
+	*off += size;
+	return size;
 }
 
 static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
@@ -358,27 +416,10 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 		}
 	}
 
-	printk(KERN_WARNING "buf_slot: %lu\n", (unsigned long)(buf_slot));
-
 	ctx->dicedev->running_ctx = ctx;
 
 	for (size_t i = 0; i < size / 4; i++) {
-		uint32_t cmd = cmd_buf[i];
-
-		printk(KERN_WARNING "io_uring cmd: %lu\n", (unsigned long)(cmd));
-
-		if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
-			uint32_t num_mask = 0xFFFF << 4;
-			uint32_t num = (cmd & num_mask) >> 4;
-
-			uint32_t out_type_mask = 0xF << 20;
-			uint32_t out_type = (cmd & out_type_mask) >> 20;
-
-			cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, buf_slot);
-		}
-
-		printk(KERN_WARNING "io_uring new cmd: %lu\n", (unsigned long)(cmd));
-
+		uint32_t cmd = dicedev_update_cmd(cmd_buf[i], buf_slot);
 		dicedev_user_iocmd(ctx, dicedev_buf, cmd);
 
 		if (ctx->burnt)
@@ -386,7 +427,6 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	}
 
 	ctx->dicedev->running_ctx = NULL;
-	// dicedev_unbind_slot(ctx->dicedev, buf_slot);
 	mutex_unlock(&ctx->dicedev->mutex);
 
 	*off += size;
@@ -735,7 +775,6 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	}
 
 	ctx->dicedev->running_ctx = NULL;
-	// dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
 	mutex_unlock(&ctx->dicedev->mutex);
 
 	return 0;
