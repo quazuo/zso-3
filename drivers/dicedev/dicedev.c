@@ -773,9 +773,6 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 	struct dicedev_ioctl_wait _arg;
 	uint32_t awaited_cmd_ndx, awaited_cmd_no;
 
-	if (ctx->burnt)
-		return -EIO;
-
 	err = copy_from_user(&_arg, (void *)arg, sizeof(_arg));
 	if (err)
 		return -EFAULT;
@@ -798,14 +795,14 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 	awaited_cmd_ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
 	awaited_cmd_no = ctx->queue.cmd_no[awaited_cmd_ndx];
 
-//	if (awaited_cmd_no <= ctx->dicedev->last_completed)
-//		return 0;
-
 	// now we actually have to wait.
 	// while (awaited_cmd_no > ctx->dicedev->last_completed) { }
 	printk("awaited: %lu\n", (unsigned long) awaited_cmd_no);
 
 	while (dicedev_ior(ctx->dicedev, DICEDEV_CMD_FENCE_LAST) < awaited_cmd_no) { }
+
+	if (ctx->burnt)
+		return -EIO;
 
 	return 0;
 }
