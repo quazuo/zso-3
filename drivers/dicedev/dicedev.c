@@ -335,6 +335,9 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 
 	ctx = dicedev_buf->owner;
 
+	if (ctx->burnt)
+		return -EIO;
+
 	cmd_buf = kmalloc(size, GFP_KERNEL);
 	if (!cmd_buf)
 		return -ENOMEM;
@@ -346,8 +349,12 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	mutex_lock(&ctx->dicedev->mutex);
 
 	buf_slot = dicedev_bind_slot(ctx, dicedev_buf);
-	if (buf_slot == -1)
+	if (buf_slot == -1) {
+		mutex_unlock(&ctx->dicedev->mutex);
 		return -EINVAL;
+	}
+
+	ctx->dicedev->running_ctx = ctx;
 
 	for (size_t i = 0; i < size / 4; i++) {
 		uint32_t cmd = cmd_buf[i];
@@ -364,12 +371,15 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 			cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, buf_slot);
 		}
 
+		printk(KERN_WARNING "io_uring new cmd: %lu\n", (unsigned long)(cmd));
+
 		dicedev_user_iocmd(ctx, dicedev_buf, cmd);
 
 		if (ctx->burnt)
 			break;
 	}
 
+	ctx->dicedev->running_ctx = NULL;
 	dicedev_unbind_slot(ctx->dicedev, buf_slot);
 	mutex_unlock(&ctx->dicedev->mutex);
 
@@ -697,9 +707,8 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 			break;
 	}
 
-	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
-
 	ctx->dicedev->running_ctx = NULL;
+	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
 	mutex_unlock(&ctx->dicedev->mutex);
 
 	return 0;
