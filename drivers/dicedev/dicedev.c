@@ -633,7 +633,7 @@ static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 		printk(KERN_WARNING "no slot left, unbinding some other\n");
 
 		for (i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
-			if (dicedev->slots[i]->owner != ctx)
+			if (dicedev->slots[i] != buf)
 				break;
 		}
 
