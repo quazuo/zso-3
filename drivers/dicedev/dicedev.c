@@ -360,6 +360,8 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 	if (!temp_buf)
 		return -ENOMEM;
 
+	printk(KERN_WARNING "io_uring_read start: %lu\n", (unsigned long) dicedev_buf->read_off);
+
 	while (read_bytes < size) {
 		size_t bytes_left = size - read_bytes;
 		pgoff_t page_ndx = dicedev_buf->read_off / DICEDEV_PAGE_SIZE;
