@@ -362,6 +362,8 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 
 	printk(KERN_WARNING "io_uring_read start: %lu %lu\n", (unsigned long) dicedev_buf->read_off, size);
 
+	mutex_lock(&dicedev_buf->owner->dicedev->mutex);
+
 	while (read_bytes < size) {
 		size_t bytes_left = size - read_bytes;
 		pgoff_t page_ndx = dicedev_buf->read_off / DICEDEV_PAGE_SIZE;
@@ -380,6 +382,8 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 		read_bytes += curr_read_n;
 		dicedev_buf->read_off += curr_read_n;
 	}
+
+	mutex_unlock(&dicedev_buf->owner->dicedev->mutex);
 
 	err = copy_to_user(buf, temp_buf, size);
 	if (err) {
