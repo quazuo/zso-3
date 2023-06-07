@@ -73,7 +73,6 @@ struct dicedev_buf {
 	uint32_t slot;
 	bool bound;
 	struct dicedev_ctx *owner;
-	loff_t out_off; // used to remember the offset for buffors used for the device's output
 };
 
 static dev_t dicedev_major;
@@ -117,6 +116,21 @@ static void dicedev_new_set_vars(uint32_t cmd, uint32_t *slot) {
 		*slot = (cmd & slot_mask) >> 4;
 }
 
+static uint32_t dicedev_update_cmd(uint32_t cmd, uint32_t buf_slot)
+{
+	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
+		uint32_t num, out_type;
+		dicedev_get_die_vars(cmd, &num, &out_type, NULL);
+		return DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, buf_slot);
+	}
+
+	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_NEW_SET)) {
+		return DICEDEV_USER_CMD_NEW_SET_WSLOT(buf_slot);
+	}
+
+	return cmd;
+}
+
 /// misc stuff
 
 static uint32_t dicedev_ior(struct dicedev_device *dicedev, uint32_t reg)
@@ -133,8 +147,6 @@ static void dicedev_iow(struct dicedev_device *dicedev, uint32_t reg,
 static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 {
 	uint32_t queue_free;
-	uint32_t num, slot;
-	struct dicedev_buf *buf;
 
 	do {
 		queue_free = dicedev_ior(ctx->dicedev, CMD_MANUAL_FREE);
@@ -158,20 +170,6 @@ static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 	}
 
 	printk(KERN_WARNING "state: %d\n", ctx->state);
-
-	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
-		dicedev_get_die_vars(cmd, &num, NULL, &slot);
-		buf = ctx->dicedev->slots[slot];
-
-		buf->out_off += num;
-		buf->out_off %= buf->size;
-
-	} else if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_NEW_SET)) {
-		dicedev_new_set_vars(cmd, &slot);
-		buf = ctx->dicedev->slots[slot];
-
-		buf->out_off = 0;
-	}
 
 	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
 }
@@ -291,21 +289,6 @@ static void dicedev_update_fence(struct dicedev_device *dicedev)
 {
 	uint32_t last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
 	dicedev->last_completed = last_completed;
-}
-
-static uint32_t dicedev_update_cmd(uint32_t cmd, uint32_t buf_slot)
-{
-	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
-		uint32_t num, out_type;
-		dicedev_get_die_vars(cmd, &num, &out_type, NULL);
-		return DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, buf_slot);
-	}
-
-	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_NEW_SET)) {
-		return DICEDEV_USER_CMD_NEW_SET_WSLOT(buf_slot);
-	}
-
-	return cmd;
 }
 
 /// irq handler
