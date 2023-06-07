@@ -161,14 +161,14 @@ static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 
 	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
 		dicedev_get_die_vars(cmd, &num, NULL, &slot);
-		buf = ctx->dicededv->slots[slot];
+		buf = ctx->dicedev->slots[slot];
 
 		buf->out_off += num;
 		buf->out_off %= buf->size;
 
 	} else if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_NEW_SET)) {
 		dicedev_new_set_vars(cmd, &slot);
-		buf = ctx->dicededv->slots[slot];
+		buf = ctx->dicedev->slots[slot];
 
 		buf->out_off = 0;
 	}
