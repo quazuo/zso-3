@@ -285,6 +285,58 @@ static void dicedev_update_fence(struct dicedev_device *dicedev)
 	dicedev->last_completed = last_completed;
 }
 
+static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
+{
+	struct device *dev = &ctx->dicedev->pdev->dev;
+	struct p_table *p_table = &buf->p_table;
+
+	printk(KERN_WARNING "dicedev_free_ptable\n");
+
+	dma_free_coherent(dev, DICEDEV_PAGE_SIZE, p_table->table.buf,
+			  p_table->table.dma_handle);
+
+	for (int i = 0; i < DICEDEV_PTABLE_ENTRY_COUNT; i++) {
+		struct dma_buf *page = &p_table->pages[i];
+		if (page->buf) {
+			dma_free_coherent(dev, DICEDEV_PAGE_SIZE, page->buf,
+					  page->dma_handle);
+		}
+	}
+}
+
+static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
+{
+	struct device *dev = &ctx->dicedev->pdev->dev;
+	size_t page_count = buf->size / DICEDEV_PAGE_SIZE +
+			    (buf->size % DICEDEV_PAGE_SIZE ? 1 : 0);
+	struct p_table *p_table = &buf->p_table;
+	size_t i;
+
+	p_table->table = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
+	if (!p_table->table.buf)
+		return -ENOMEM;
+
+	for (i = 0; i < page_count; i++) {
+		struct dma_buf *page = &p_table->pages[i];
+		uint32_t *entry;
+
+		*page = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
+		if (!page->buf)
+			goto err_page_alloc;
+
+		memset(page->buf, 0, DICEDEV_PAGE_SIZE);
+
+		entry = p_table->table.buf + (i * DICEDEV_PTABLE_ENTRY_SIZE);
+		*entry = DICEDEV_PTABLE_MAKE_ENTRY(1, page->dma_handle);
+	}
+
+	return 0;
+
+err_page_alloc:
+	dicedev_free_ptable(ctx, buf);
+	return -ENOMEM;
+}
+
 /// irq handler
 
 static irqreturn_t dicedev_isr(int irq, void *opaque)
@@ -510,12 +562,25 @@ static int dicedev_buf_mmap(struct file *file, struct vm_area_struct *vma)
 	return 0;
 }
 
-struct file_operations dicedev_buf_fops = { .owner = THIS_MODULE,
-					    .read = dicedev_buf_read,
-					    .write = dicedev_buf_write,
-					    .unlocked_ioctl = dicedev_buf_ioctl,
-					    .compat_ioctl = dicedev_buf_ioctl,
-					    .mmap = dicedev_buf_mmap };
+static int dicedev_buf_release(struct inode *inode, struct file *file)
+{
+	struct dicedev_buf *buf = file->private_data;
+
+	if (buf) {
+		dicedev_free_ptable(buf->owner, buf);
+		kfree(buf);
+	}
+}
+
+struct file_operations dicedev_buf_fops = {
+	.owner = THIS_MODULE,
+	.read = dicedev_buf_read,
+	.write = dicedev_buf_write,
+	.unlocked_ioctl = dicedev_buf_ioctl,
+	.compat_ioctl = dicedev_buf_ioctl,
+	.mmap = dicedev_buf_mmap,
+	.release = dicedev_buf_release
+};
 
 /// file operations
 
@@ -558,58 +623,6 @@ static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
 	struct dma_buf buf;
 	buf.buf = dma_alloc_coherent(dev, size, &buf.dma_handle, GFP_KERNEL);
 	return buf;
-}
-
-static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
-{
-	struct device *dev = &ctx->dicedev->pdev->dev;
-	struct p_table *p_table = &buf->p_table;
-
-	printk(KERN_WARNING "dicedev_free_ptable\n");
-
-	dma_free_coherent(dev, DICEDEV_PAGE_SIZE, p_table->table.buf,
-			  p_table->table.dma_handle);
-
-	for (int i = 0; i < DICEDEV_PTABLE_ENTRY_COUNT; i++) {
-		struct dma_buf *page = &p_table->pages[i];
-		if (page->buf) {
-			dma_free_coherent(dev, DICEDEV_PAGE_SIZE, page->buf,
-					  page->dma_handle);
-		}
-	}
-}
-
-static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
-{
-	struct device *dev = &ctx->dicedev->pdev->dev;
-	size_t page_count = buf->size / DICEDEV_PAGE_SIZE +
-			    (buf->size % DICEDEV_PAGE_SIZE ? 1 : 0);
-	struct p_table *p_table = &buf->p_table;
-	size_t i;
-
-	p_table->table = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
-	if (!p_table->table.buf)
-		return -ENOMEM;
-
-	for (i = 0; i < page_count; i++) {
-		struct dma_buf *page = &p_table->pages[i];
-		uint32_t *entry;
-
-		*page = dicedev_dma_alloc(dev, DICEDEV_PAGE_SIZE);
-		if (!page->buf)
-			goto err_page_alloc;
-
-		memset(page->buf, 0, DICEDEV_PAGE_SIZE);
-
-		entry = p_table->table.buf + (i * DICEDEV_PTABLE_ENTRY_SIZE);
-		*entry = DICEDEV_PTABLE_MAKE_ENTRY(1, page->dma_handle);
-	}
-
-	return 0;
-
-err_page_alloc:
-	dicedev_free_ptable(ctx, buf);
-	return -ENOMEM;
 }
 
 static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
@@ -889,11 +902,13 @@ static long dicedev_ioctl(struct file *file, unsigned int cmd,
 	return err;
 }
 
-static struct file_operations dicedev_fops = { .owner = THIS_MODULE,
-					       .open = dicedev_open,
-					       .release = dicedev_release,
-					       .unlocked_ioctl = dicedev_ioctl,
-					       .compat_ioctl = dicedev_ioctl };
+static struct file_operations dicedev_fops = {
+	.owner = THIS_MODULE,
+	.open = dicedev_open,
+	.release = dicedev_release,
+	.unlocked_ioctl = dicedev_ioctl,
+	.compat_ioctl = dicedev_ioctl
+};
 
 /// pci operations
 
