@@ -781,7 +781,7 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 	if (err)
 		return -EFAULT;
 
-	if (arg > DICEDEV_CTX_CMD_QUEUE_SIZE) {
+	if (_arg.cnt > DICEDEV_CTX_CMD_QUEUE_SIZE) {
 		// if we're trying to wait for more commands than the queue
 		// can hold, then there's definitely nothing to wait for.
 		return 0;
@@ -795,7 +795,7 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 //		return 0;
 //	}
 
-	awaited_cmd_ndx = ctx->queue.end + DICEDEV_CTX_CMD_QUEUE_SIZE - arg;
+	awaited_cmd_ndx = ctx->queue.end + DICEDEV_CTX_CMD_QUEUE_SIZE - _arg.cnt;
 	awaited_cmd_ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
 	awaited_cmd_no = ctx->queue.cmd_no[awaited_cmd_ndx];
 
