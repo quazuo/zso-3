@@ -308,7 +308,7 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 /// buffer file operations
 
 static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf);
-static void dicedev_unbind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf);
+static void dicedev_unbind_slot(struct dicedev_ctx *ctx, uint32_t slot);
 
 static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 				size_t size, loff_t *off)
@@ -370,7 +370,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 			break;
 	}
 
-	dicedev_unbind_slot(ctx, dicedev_buf);
+	dicedev_unbind_slot(ctx, buf_slot);
 	mutex_unlock(&ctx->dicedev->mutex);
 
 	*off += size;
