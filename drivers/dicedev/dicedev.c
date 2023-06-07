@@ -262,8 +262,7 @@ static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
 
 static void dicedev_update_fence(struct dicedev_device *dicedev)
 {
-	uint32_t last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
-	dicedev->last_completed = last_completed;
+	dicedev->last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
 }
 
 static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
@@ -799,8 +798,8 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 	awaited_cmd_ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
 	awaited_cmd_no = ctx->queue.cmd_no[awaited_cmd_ndx];
 
-	if (awaited_cmd_no <= ctx->dicedev->last_completed)
-		return 0;
+//	if (awaited_cmd_no <= ctx->dicedev->last_completed)
+//		return 0;
 
 	// now we actually have to wait.
 	// while (awaited_cmd_no > ctx->dicedev->last_completed) { }
