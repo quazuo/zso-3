@@ -19,15 +19,6 @@
 
 MODULE_LICENSE("GPL");
 
-/** TODO.
- * wspolbieznosc
- * io_uring
- * wait
- * error checking komend
- * spalanie kontekstu
- * zamienic do...while(...) na cos lepszego xd (aktywne oczekiwanie)
- */
-
 struct dicedev_device {
 	struct pci_dev *pdev;
 	struct cdev cdev;
