@@ -307,6 +307,8 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 
 /// buffer file operations
 
+static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf);
+
 static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 				size_t size, loff_t *off)
 {
@@ -321,6 +323,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	struct dicedev_buf *dicedev_buf;
 	struct dicedev_ctx *ctx;
 	uint32_t *cmd_buf;
+	int buf_slot;
 
 	if (size % 4)
 		return -EINVAL;
@@ -339,6 +342,12 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	if (ret)
 		goto copy_err;
 
+	mutex_lock(&ctx->dicedev->mutex);
+
+	buf_slot = dicedev_bind_slot(ctx, dicedev_buf);
+	if (buf_slot == -1)
+		return -EINVAL;
+
 	for (size_t i = 0; i < size / 4; i++) {
 		uint32_t cmd = cmd_buf[i];
 
@@ -351,7 +360,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 			uint32_t out_type_mask = 0xF << 20;
 			uint32_t out_type = (cmd & out_type_mask) >> 20;
 
-			cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, dicedev_buf->slot);
+			cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, buf_slot);
 		}
 
 		dicedev_user_iocmd(ctx, dicedev_buf, cmd);
@@ -359,6 +368,8 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 		if (ctx->burnt)
 			break;
 	}
+
+	mutex_unlock(&ctx->dicedev->mutex);
 
 	*off += size;
 	ret = size;
@@ -457,8 +468,7 @@ static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
 	return buf;
 }
 
-static void dicedev_free_ptable(struct dicedev_ctx *ctx,
-				struct dicedev_buf *buf)
+static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
 	struct device *dev = &ctx->dicedev->pdev->dev;
 	struct p_table *p_table = &buf->p_table;
@@ -477,8 +487,7 @@ static void dicedev_free_ptable(struct dicedev_ctx *ctx,
 	}
 }
 
-static int dicedev_alloc_ptable(struct dicedev_ctx *ctx,
-				struct dicedev_buf *buf)
+static int dicedev_alloc_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
 	struct device *dev = &ctx->dicedev->pdev->dev;
 	size_t page_count = buf->size / DICEDEV_PAGE_SIZE +
@@ -559,8 +568,7 @@ err_bufsize:
 	return err;
 }
 
-static int dicedev_bind_slot(struct dicedev_ctx *ctx,
-			     struct dicedev_buf *buf)
+static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
 	uint32_t i, cmd;
 	uint64_t pa;
