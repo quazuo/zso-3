@@ -575,6 +575,8 @@ static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 	uint64_t pa;
 	struct dicedev_device *dicedev = ctx->dicedev;
 
+	printk(KERN_WARNING "bind_slot\n");
+
 	if (buf->bound) {
 		printk(KERN_WARNING "buf already bound\n");
 		return -1;
