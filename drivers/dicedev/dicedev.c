@@ -364,6 +364,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 
 copy_err:
 	kfree(_buf);
+	printk("io_uring err: %d\n", err);
 	return err;
 }
 
