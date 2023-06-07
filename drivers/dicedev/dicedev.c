@@ -805,7 +805,7 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 	// while (awaited_cmd_no > ctx->dicedev->last_completed) { }
 	printk("awaited: %lu\n", (unsigned long) awaited_cmd_no);
 
-	while (dicedev_ior(ctx->dicedev, DICEDEV_CMD_FENCE_LAST) != awaited_cmd_no) { }
+	while (dicedev_ior(ctx->dicedev, DICEDEV_CMD_FENCE_LAST) < awaited_cmd_no) { }
 
 	return 0;
 }
