@@ -109,13 +109,6 @@ static void dicedev_get_die_vars(uint32_t cmd, uint32_t *num, uint32_t *out_type
 		*slot = (cmd & slot_mask) >> 24;
 }
 
-static void dicedev_new_set_vars(uint32_t cmd, uint32_t *slot) {
-	uint32_t slot_mask = 0xF << 4;
-
-	if (slot)
-		*slot = (cmd & slot_mask) >> 4;
-}
-
 static uint32_t dicedev_update_cmd(uint32_t cmd, uint32_t buf_slot)
 {
 	if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
