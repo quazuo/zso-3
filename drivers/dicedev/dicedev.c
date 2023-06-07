@@ -352,7 +352,7 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 		return -EINVAL;
 
 	dicedev_buf = file->private_data;
-	if (!buf)
+	if (!dicedev_buf)
 		return -EINVAL;
 
 	while (read_bytes < size) {
