@@ -317,10 +317,10 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 				 size_t size, loff_t *off)
 {
-	int err = 0;
+	int ret;
 	struct dicedev_buf *dicedev_buf;
 	struct dicedev_ctx *ctx;
-	uint32_t *_buf;
+	uint32_t *cmd_buf;
 
 	if (size % 4)
 		return -EINVAL;
@@ -329,18 +329,18 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	if (!buf)
 		return -EINVAL;
 
-	_buf = kmalloc(size, GFP_KERNEL);
-	if (!_buf)
-		return -ENOMEM;
-
-	err = copy_from_user(_buf, buf, size);
-	if (err)
-		goto copy_err;
-
 	ctx = dicedev_buf->owner;
 
+	cmd_buf = kmalloc(size, GFP_KERNEL);
+	if (!cmd_buf)
+		return -ENOMEM;
+
+	ret = copy_from_user(_buf, buf, size);
+	if (ret)
+		goto copy_err;
+
 	for (size_t i = 0; i < size / 4; i++) {
-		uint32_t cmd = _buf[i];
+		uint32_t cmd = cmd_buf[i];
 
 		printk(KERN_WARNING "io_uring cmd: %lu\n", (unsigned long)(cmd));
 
@@ -361,11 +361,11 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	}
 
 	*off += size;
+	ret = size;
 
 copy_err:
-	kfree(_buf);
-	printk("io_uring err: %d\n", err);
-	return err;
+	kfree(cmd_buf);
+	return ret;
 }
 
 static long dicedev_buf_ioctl(struct file *file, unsigned int cmd,
