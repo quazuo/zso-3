@@ -147,8 +147,6 @@ static void dicedev_user_iocmd(struct dicedev_ctx *ctx, struct dicedev_buf *buf,
 	if (ctx->state == GET_DIE_0) {
 		if ((buf->allowed & cmd) != cmd)
 			ctx->burnt = true;
-
-		// todo -- return? pozwolic wysylac reszte czy nie?
 	}
 
 	dicedev_iocmd(ctx, cmd);
@@ -219,6 +217,37 @@ static int dicedev_disable(struct pci_dev *pdev)
 	return 0;
 }
 
+static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
+{
+	// find the ctx that submitted the cmd with cmd_no fence id
+
+	for (size_t i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
+		struct dicedev_ctx *owner;
+		size_t ndx;
+
+		if (!dicedev->slots[i])
+			continue;
+
+		owner = dicedev->slots[i]->owner;
+		ndx = owner->queue.begin;
+
+		while (ndx != owner->queue.end) {
+			if (owner->queue.cmd_no[ndx] == cmd_no) {
+				owner->burnt = true;
+				return;
+			}
+
+			ndx++;
+			ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
+		}
+
+		if (owner->queue.cmd_no[ndx] == cmd_no) {
+			owner->burnt = true;
+			return;
+		}
+	}
+}
+
 static void dicedev_update_fence(struct dicedev_device *dicedev)
 {
 	uint32_t last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
@@ -258,6 +287,10 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 	if (intr & DICEDEV_INTR_CMD_ERROR || intr & DICEDEV_INTR_MEM_ERROR) {
 		if (dicedev->running_ctx) {
 			dicedev->running_ctx->burnt = true;
+		} else {
+			uint32_t last_completed =
+				dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
+			dicedev_burn_ctx(last_completed);
 		}
 	}
 
@@ -284,8 +317,54 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 				 size_t size, loff_t *off)
 {
-	// todo -- io_uring
-	return 0;
+	int err = 0;
+	struct dicedev_buf *dicedev_buf;
+	struct dicedev_ctx *ctx;
+	uint32_t *_buf;
+
+	if (size % 4 || *off % 4)
+		return -EINVAL;
+
+	dicedev_buf = file->private_data;
+	if (!buf)
+		return -EINVAL;
+
+	_buf = kmalloc(size, GFP_KERNEL);
+	if (!_buf)
+		return -ENOMEM;
+
+	err = copy_from_user(_buf, buf, size);
+	if (err)
+		goto copy_err;
+
+	ctx = dicedev_buf->owner;
+
+	for (size_t i = 0; i < size / 4; i++) {
+		uint32_t cmd = _buf[i];
+
+		printk(KERN_WARNING "io_uring cmd: %lu\n", (unsigned long)(cmd));
+
+		if (dicedev_is_cmd(cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
+			uint32_t num_mask = 0xFFFF << 4;
+			uint32_t num = (cmd & num_mask) >> 4;
+
+			uint32_t out_type_mask = 0xF << 20;
+			uint32_t out_type = (cmd & out_type_mask) >> 20;
+
+			cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, out_buf_slot);
+		}
+
+		dicedev_user_iocmd(ctx, dicedev_buf, cmd);
+
+		if (ctx->burnt)
+			break;
+	}
+
+	*off += size;
+
+copy_err:
+	kfree(_buf);
+	return err;
 }
 
 static long dicedev_buf_ioctl(struct file *file, unsigned int cmd,
@@ -542,7 +621,6 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	struct fd f;
 	struct dicedev_buf *in_buf, *out_buf;
 	uint32_t out_buf_slot;
-	size_t dice_requested = 0;
 
 	printk(KERN_WARNING "dicedev_ioctl_run\n");
 
@@ -598,16 +676,6 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 			uint32_t out_type = (*cmd & out_type_mask) >> 20;
 
 			*cmd = DICEDEV_USER_CMD_GET_DIE_HEADER_WSLOT(num, out_type, out_buf_slot);
-
-			dice_requested += num;
-		}
-
-		printk(KERN_WARNING "req: %lu size: %lu\n", (unsigned long) dice_requested,
-		       (unsigned long) out_buf->size);
-
-		if (dice_requested > out_buf->size) {
-			ctx->burnt = true;
-			break;
 		}
 
 		dicedev_user_iocmd(ctx, in_buf, *cmd);
