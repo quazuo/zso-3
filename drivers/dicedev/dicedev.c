@@ -534,6 +534,9 @@ static int dicedev_buf_release(struct inode *inode, struct file *file)
 	struct dicedev_buf *buf = file->private_data;
 
 	if (buf) {
+		if (buf->slot)
+			dicedev_unbind_slot(buf->owner->dicedev, buf->slot);
+
 		dicedev_free_ptable(buf->owner, buf);
 		kfree(buf);
 	}
@@ -784,13 +787,13 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 		return 0;
 	}
 
-	if (ctx->queue.end - ctx->queue.begin < arg) {
-		// if the above case holds, then it means that the number of
-		// commands about which we don't know if they were completed
-		// or not, is less than arg. this means that there's nothing
-		// to wait for.
-		return 0;
-	}
+//	if (ctx->queue.end - ctx->queue.begin < arg) {
+//		// if the above case holds, then it means that the number of
+//		// commands about which we don't know if they were completed
+//		// or not, is less than arg. this means that there's nothing
+//		// to wait for.
+//		return 0;
+//	}
 
 	awaited_cmd_ndx = ctx->queue.end + DICEDEV_CTX_CMD_QUEUE_SIZE - arg;
 	awaited_cmd_ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
@@ -800,7 +803,10 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 		return 0;
 
 	// now we actually have to wait.
-	while (awaited_cmd_no > ctx->dicedev->last_completed) { }
+	// while (awaited_cmd_no > ctx->dicedev->last_completed) { }
+	printk("awaited: %lu\n", (unsigned long) awaited_cmd_no);
+
+	while (dicedev_ior(ctx->dicedev, DICEDEV_CMD_FENCE_LAST) != awaited_cmd_no) { }
 
 	return 0;
 }
