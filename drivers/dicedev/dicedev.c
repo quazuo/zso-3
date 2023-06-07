@@ -322,7 +322,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	struct dicedev_ctx *ctx;
 	uint32_t *_buf;
 
-	if (size % 4 || *off % 4)
+	if (size % 4)
 		return -EINVAL;
 
 	dicedev_buf = file->private_data;
