@@ -577,6 +577,8 @@ static int dicedev_buf_release(struct inode *inode, struct file *file)
 		dicedev_free_ptable(buf->owner, buf);
 		kfree(buf);
 	}
+
+	return 0;
 }
 
 struct file_operations dicedev_buf_fops = {
