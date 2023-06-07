@@ -348,10 +348,14 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 
 	mutex_lock(&ctx->dicedev->mutex);
 
-	buf_slot = dicedev_bind_slot(ctx, dicedev_buf);
-	if (buf_slot == -1) {
-		mutex_unlock(&ctx->dicedev->mutex);
-		return -EINVAL;
+	if (dicedev_buf->bound) {
+		buf_slot = dicedev_buf->slot;
+	} else {
+		buf_slot = dicedev_bind_slot(ctx, dicedev_buf);
+		if (buf_slot == -1) {
+			mutex_unlock(&ctx->dicedev->mutex);
+			return -EINVAL;
+		}
 	}
 
 	printk(KERN_WARNING "buf_slot: %lu\n", (unsigned long)(buf_slot));
@@ -382,7 +386,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 	}
 
 	ctx->dicedev->running_ctx = NULL;
-	dicedev_unbind_slot(ctx->dicedev, buf_slot);
+	// dicedev_unbind_slot(ctx->dicedev, buf_slot);
 	mutex_unlock(&ctx->dicedev->mutex);
 
 	*off += size;
@@ -469,8 +473,20 @@ static int dicedev_open(struct inode *inode, struct file *file)
 
 static int dicedev_release(struct inode *inode, struct file *file)
 {
-	if (file->private_data)
-		kfree(file->private_data);
+	struct dicedev_ctx *ctx = file->private_data;
+
+	if (!file->private_data)
+		return;
+
+	for (int i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
+		struct dicedev_buf *buf = ctx->dicedev->slots[i];
+
+		if (buf && buf->owner == ctx) {
+			dicedev_unbind_slot(ctx->dicedev, i);
+		}
+	}
+
+	kfree(ctx);
 
 	return 0;
 }
@@ -582,6 +598,18 @@ err_bufsize:
 	return err;
 }
 
+static void dicedev_unbind_slot(struct dicedev_device *dicedev, uint32_t slot)
+{
+	struct dicedev_buf *buf = dicedev->slots[slot];
+	uint32_t cmd = DICEDEV_USER_CMD_UNBIND_SLOT_HEADER(slot);
+	dicedev_iow(dicedev, CMD_MANUAL_FEED, cmd);
+
+	if (buf)
+		buf->bound = false;
+
+	dicedev->slots[slot] = NULL;
+}
+
 static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 {
 	uint32_t i, cmd;
@@ -601,9 +629,14 @@ static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 	}
 
 	if (i == DICEDEV_BUF_SLOT_COUNT) {
-		// todo
-		printk(KERN_WARNING "no slot left\n");
-		return -1;
+		printk(KERN_WARNING "no slot left, unbinding some other\n");
+
+		for (i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
+			if (dicedev->slots[i]->owner != ctx)
+				break;
+		}
+
+		dicedev_unbind_slot(dicedev, i);
 	}
 
 	cmd = DICEDEV_USER_CMD_BIND_SLOT_HEADER(i, buf->seed);
@@ -625,18 +658,6 @@ static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 	dicedev->slots[i] = buf;
 
 	return buf->slot;
-}
-
-static void dicedev_unbind_slot(struct dicedev_device *dicedev, uint32_t slot)
-{
-	struct dicedev_buf *buf = dicedev->slots[slot];
-	uint32_t cmd = DICEDEV_USER_CMD_UNBIND_SLOT_HEADER(slot);
-	dicedev_iow(dicedev, CMD_MANUAL_FEED, cmd);
-
-	if (buf)
-		buf->bound = false;
-
-	dicedev->slots[slot] = NULL;
 }
 
 static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
@@ -676,11 +697,14 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 
 	mutex_lock(&ctx->dicedev->mutex);
 
-	out_buf_slot = dicedev_bind_slot(ctx, out_buf);
-
-	if (out_buf_slot == -1) {
-		mutex_unlock(&ctx->dicedev->mutex);
-		return -EINVAL;
+	if (out_buf->bound) {
+		out_buf_slot = out_buf->slot;
+	} else {
+		out_buf_slot = dicedev_bind_slot(ctx, out_buf);
+		if (out_buf_slot == -1) {
+			mutex_unlock(&ctx->dicedev->mutex);
+			return -EINVAL;
+		}
 	}
 
 	ctx->dicedev->running_ctx = ctx;
@@ -710,7 +734,7 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	}
 
 	ctx->dicedev->running_ctx = NULL;
-	dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
+	// dicedev_unbind_slot(ctx->dicedev, out_buf_slot);
 	mutex_unlock(&ctx->dicedev->mutex);
 
 	return 0;
