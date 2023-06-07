@@ -356,10 +356,9 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 		return -EINVAL;
 
 	while (read_bytes < size) {
-		loff_t curr_off = dicedev_buf->read_off + read_bytes;
-		pgoff_t page_ndx = curr_off / DICEDEV_PAGE_SIZE;
-		loff_t page_off = curr_off % DICEDEV_PAGE_SIZE;
-		void *page = dicedev_buf->p_table.pages[page_ndx];
+		pgoff_t page_ndx = dicedev_buf->read_off / DICEDEV_PAGE_SIZE;
+		loff_t page_off = dicedev_buf->read_off % DICEDEV_PAGE_SIZE;
+		void *page = dicedev_buf->p_table.pages[page_ndx].buf;
 		size_t curr_read_n = DICEDEV_PAGE_SIZE - page_off;
 
 		err = copy_to_user(buf + read_bytes, page + page_off, curr_read_n);
