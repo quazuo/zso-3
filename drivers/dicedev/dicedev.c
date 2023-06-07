@@ -46,8 +46,6 @@ struct dicedev_device {
 
 struct dicedev_ctx {
 	struct dicedev_device *dicedev;
-	uint32_t submitted; // todo - na pewno tak?
-	uint32_t completed; // todo - ^
 	bool burnt;
 	enum processing_state state;
 	struct cmd_queue {
@@ -163,8 +161,6 @@ static void dicedev_iocmd(struct dicedev_ctx *ctx, uint32_t cmd)
 		ctx->state = NONE;
 	}
 
-	printk(KERN_WARNING "state: %d\n", ctx->state);
-
 	dicedev_iow(ctx->dicedev, CMD_MANUAL_FEED, cmd);
 }
 
@@ -206,12 +202,6 @@ static void dicedev_user_iocmd(struct dicedev_ctx *ctx, struct dicedev_buf *buf,
 		ctx->queue.begin++;
 		ctx->queue.begin %= DICEDEV_CTX_CMD_QUEUE_SIZE;
 	}
-
-	printk(KERN_WARNING "FENCE SENT: fence_no: %lu, begin: %lu, end: %lu\n",
-	       (unsigned long)fence_no, (unsigned long)ctx->queue.begin,
-	       (unsigned long)ctx->queue.end);
-
-	// todo: czy na pewno takie zachowanie jesli begin == end?
 }
 
 static int dicedev_enable(struct pci_dev *pdev)
@@ -297,8 +287,6 @@ static void dicedev_free_ptable(struct dicedev_ctx *ctx, struct dicedev_buf *buf
 	struct device *dev = &ctx->dicedev->pdev->dev;
 	struct p_table *p_table = &buf->p_table;
 
-	printk(KERN_WARNING "dicedev_free_ptable\n");
-
 	dma_free_coherent(dev, DICEDEV_PAGE_SIZE, p_table->table.buf,
 			  p_table->table.dma_handle);
 
@@ -360,19 +348,7 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 	intr = dicedev_ior(dicedev, DICEDEV_INTR);
 
 	if (intr & DICEDEV_INTR_FENCE_WAIT)
-		printk(KERN_WARNING "DICEDEV_INTR_FENCE_WAIT\n");
-	if (intr & DICEDEV_INTR_FEED_ERROR)
-		printk(KERN_WARNING "DICEDEV_INTR_FEED_ERROR\n");
-	if (intr & DICEDEV_INTR_CMD_ERROR)
-		printk(KERN_WARNING "DICEDEV_INTR_CMD_ERROR\n");
-	if (intr & DICEDEV_INTR_MEM_ERROR)
-		printk(KERN_WARNING "DICEDEV_INTR_MEM_ERROR\n");
-	if (intr & DICEDEV_INTR_SLOT_ERROR)
-		printk(KERN_WARNING "DICEDEV_INTR_SLOT_ERROR\n");
-
-	if (intr & DICEDEV_INTR_FENCE_WAIT) {
 		dicedev_update_fence(dicedev);
-	}
 
 	if (intr & DICEDEV_INTR_CMD_ERROR || intr & DICEDEV_INTR_MEM_ERROR) {
 		if (dicedev->running_ctx) {
@@ -419,8 +395,6 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 	if (!temp_buf)
 		return -ENOMEM;
 
-	printk(KERN_WARNING "io_uring_read start: %lu %lu\n", (unsigned long) dicedev_buf->read_off, size);
-
 	mutex_lock(&dicedev_buf->owner->dicedev->mutex);
 
 	while (read_bytes < size) {
@@ -432,9 +406,6 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 		size_t curr_read_n = DICEDEV_PAGE_SIZE - page_off;
 		if (bytes_left < curr_read_n)
 			curr_read_n = bytes_left;
-
-		printk(KERN_WARNING "io_uring_read: %lu %lu %lu\n", (unsigned long) page_ndx,
-		       (unsigned long) page_off, curr_read_n);
 
 		memcpy(temp_buf + read_bytes, page + page_off, curr_read_n);
 
@@ -548,8 +519,6 @@ static vm_fault_t dicedev_buf_mmap_fault(struct vm_fault *vmf)
 	struct dicedev_buf *buf = file->private_data;
 	struct page *page;
 
-	printk(KERN_WARNING "mmap fault %lu %lu\n", vmf->pgoff, buf->size);
-
 	if (vmf->pgoff * DICEDEV_PAGE_SIZE >= buf->size)
 		return VM_FAULT_SIGBUS;
 
@@ -633,8 +602,6 @@ static long dicedev_ioctl_crtset(struct dicedev_ctx *ctx, unsigned long arg)
 	struct dicedev_ioctl_create_set _arg;
 	struct dicedev_buf *buf;
 
-	printk(KERN_WARNING "dicedev_ioctl_crtset\n");
-
 	err = copy_from_user(&_arg, (void *)arg, sizeof(_arg));
 	if (err)
 		return -EFAULT;
@@ -681,8 +648,6 @@ static void dicedev_unbind_slot(struct dicedev_device *dicedev, uint32_t slot)
 	uint32_t cmd = DICEDEV_USER_CMD_UNBIND_SLOT_HEADER(slot);
 	dicedev_iow(dicedev, CMD_MANUAL_FEED, cmd);
 
-	printk(KERN_WARNING "unbind_slot\n");
-
 	if (buf)
 		buf->bound = false;
 
@@ -695,8 +660,6 @@ static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 	uint64_t pa;
 	struct dicedev_device *dicedev = ctx->dicedev;
 
-	printk(KERN_WARNING "bind_slot\n");
-
 	if (buf->bound) {
 		printk(KERN_WARNING "buf already bound\n");
 		return -1;
@@ -708,8 +671,6 @@ static int dicedev_bind_slot(struct dicedev_ctx *ctx, struct dicedev_buf *buf)
 	}
 
 	if (i == DICEDEV_BUF_SLOT_COUNT) {
-		printk(KERN_WARNING "no slot left, unbinding some other\n");
-
 		for (i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++) {
 			if (dicedev->slots[i] != buf)
 				break;
@@ -746,8 +707,6 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 	struct fd f;
 	struct dicedev_buf *in_buf, *out_buf;
 	uint32_t out_buf_slot;
-
-	printk(KERN_WARNING "dicedev_ioctl_run\n");
 
 	if (ctx->burnt)
 		return -EIO;
@@ -792,9 +751,6 @@ static long dicedev_ioctl_run(struct dicedev_ctx *ctx, unsigned long arg)
 		pgoff_t page_ndx = (_arg.addr + off) / DICEDEV_PAGE_SIZE;
 		loff_t page_off = (_arg.addr + off) % DICEDEV_PAGE_SIZE;
 		uint32_t *cmd = in_buf->p_table.pages[page_ndx].buf + page_off;
-
-		printk(KERN_WARNING "ndx: %lu, off: %lu, cmd: %lu\n", page_ndx,
-		       (unsigned long)page_off, (unsigned long)(*cmd));
 
 		if (dicedev_is_cmd(*cmd, DICEDEV_USER_CMD_TYPE_GET_DIE)) {
 			uint32_t num_mask = 0xFFFF << 4;
@@ -854,8 +810,6 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 
 	// now we actually have to wait.
 	while (awaited_cmd_no > ctx->dicedev->last_completed) { }
-
-	// todo
 
 	return 0;
 }
@@ -994,8 +948,6 @@ static int dicedev_probe(struct pci_dev *pdev,
 	for (uint32_t i = 0; i < DICEDEV_BUF_SLOT_COUNT; i++)
 		dicedev_unbind_slot(dev, i);
 
-	printk(KERN_WARNING "probe successful\n");
-
 	return 0;
 
 out_cdev:
@@ -1019,9 +971,7 @@ static void dicedev_remove(struct pci_dev *pdev)
 {
 	struct dicedev_device *dev = pci_get_drvdata(pdev);
 
-	printk(KERN_WARNING "removing\n");
-
-	dicedev_disable(pdev); // todo na pewno?
+	dicedev_disable(pdev);
 
 	if (dev->dev) {
 		device_destroy(&dicedev_class, dicedev_major + dev->idx);
@@ -1038,20 +988,17 @@ static void dicedev_remove(struct pci_dev *pdev)
 
 static int dicedev_suspend(struct pci_dev *pdev, pm_message_t state)
 {
-	// todo
 	return 0;
 }
 
 static int dicedev_resume(struct pci_dev *pdev)
 {
-	// todo
 	return 0;
 }
 
 static void dicedev_shutdown(struct pci_dev *pdev)
 {
 	dicedev_remove(pdev);
-	// todo
 }
 
 struct pci_driver dicedev_pci_drv = { .name = "dicedev",
