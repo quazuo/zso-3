@@ -370,7 +370,7 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 			break;
 	}
 
-	dicedev_unbind_slot(ctx, buf_slot);
+	dicedev_unbind_slot(ctx->dicedev, buf_slot);
 	mutex_unlock(&ctx->dicedev->mutex);
 
 	*off += size;
