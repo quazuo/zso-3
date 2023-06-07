@@ -366,21 +366,25 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 		void *page = dicedev_buf->p_table.pages[page_ndx].buf;
 		size_t curr_read_n = DICEDEV_PAGE_SIZE - page_off;
 
+		printk(KERN_WARNING "io_uring_read: %lu %lu %lu\n", (unsigned long) page_ndx,
+		       (unsigned long) page_off, curr_read_n);
+
 		memcpy(temp_buf + read_bytes, page + page_off, curr_read_n);
 
-//		int err = copy_to_user(buf + read_bytes, page + page_off, curr_read_n);
-//		if (err)
-//			return -EFAULT;
-
 		read_bytes += curr_read_n;
-		if (off) *off += curr_read_n;
 		dicedev_buf->read_off += curr_read_n;
 	}
 
 	err = copy_to_user(buf, temp_buf, size);
-	if (err)
+	if (err) {
+		kfree(temp_buf);
 		return -EFAULT;
+	}
 
+	if (off)
+		*off += size;
+
+	kfree(temp_buf);
 	return size;
 }
 
