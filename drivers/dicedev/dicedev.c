@@ -29,7 +29,6 @@ struct dicedev_device {
 	struct mutex mutex;
 	struct dicedev_buf *slots[DICEDEV_BUF_SLOT_COUNT];
 	uint32_t last_fence; // last fence sent to the device
-	uint32_t last_completed; // last fence completed, as evidenced by CMD_FENCE_LAST
 	struct dicedev_ctx *running_ctx;
 };
 
@@ -260,11 +259,6 @@ static void dicedev_burn_ctx(struct dicedev_device *dicedev, uint32_t cmd_no)
 	}
 }
 
-static void dicedev_update_fence(struct dicedev_device *dicedev)
-{
-	dicedev->last_completed = dicedev_ior(dicedev, DICEDEV_CMD_FENCE_LAST);
-}
-
 static struct dma_buf dicedev_dma_alloc(struct device *dev, size_t size)
 {
 	struct dma_buf buf;
@@ -336,9 +330,6 @@ static irqreturn_t dicedev_isr(int irq, void *opaque)
 	spin_lock_irqsave(&dicedev->slock, slock_flags);
 
 	intr = dicedev_ior(dicedev, DICEDEV_INTR);
-
-	if (intr & DICEDEV_INTR_FENCE_WAIT)
-		dicedev_update_fence(dicedev);
 
 	if (intr & DICEDEV_INTR_CMD_ERROR || intr & DICEDEV_INTR_MEM_ERROR) {
 		if (dicedev->running_ctx) {
@@ -783,21 +774,9 @@ static long dicedev_ioctl_wait(struct dicedev_ctx *ctx, unsigned long arg)
 		return 0;
 	}
 
-//	if (ctx->queue.end - ctx->queue.begin < arg) {
-//		// if the above case holds, then it means that the number of
-//		// commands about which we don't know if they were completed
-//		// or not, is less than arg. this means that there's nothing
-//		// to wait for.
-//		return 0;
-//	}
-
 	awaited_cmd_ndx = ctx->queue.end + DICEDEV_CTX_CMD_QUEUE_SIZE - _arg.cnt;
 	awaited_cmd_ndx %= DICEDEV_CTX_CMD_QUEUE_SIZE;
 	awaited_cmd_no = ctx->queue.cmd_no[awaited_cmd_ndx];
-
-	// now we actually have to wait.
-	// while (awaited_cmd_no > ctx->dicedev->last_completed) { }
-	printk("awaited: %lu\n", (unsigned long) awaited_cmd_no);
 
 	while (dicedev_ior(ctx->dicedev, DICEDEV_CMD_FENCE_LAST) < awaited_cmd_no) { }
 
@@ -828,8 +807,6 @@ static long dicedev_ioctl(struct file *file, unsigned int cmd,
 	struct dicedev_ctx *ctx = file->private_data;
 	if (!ctx)
 		return -EINVAL;
-
-	dicedev_update_fence(ctx->dicedev);
 
 	switch (cmd) {
 	case DICEDEV_IOCTL_CREATE_SET:
