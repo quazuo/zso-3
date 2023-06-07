@@ -346,6 +346,8 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 {
 	struct dicedev_buf *dicedev_buf;
 	loff_t read_bytes = 0;
+	char *temp_buf;
+	int err;
 
 	if (size % sizeof(struct dice))
 		return -EINVAL;
@@ -354,11 +356,17 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 	if (!dicedev_buf)
 		return -EINVAL;
 
+	temp_buf = kmalloc(size, GFP_KERNEL);
+	if (!temp_buf)
+		return -ENOMEM;
+
 	while (read_bytes < size) {
-		// pgoff_t page_ndx = dicedev_buf->read_off / DICEDEV_PAGE_SIZE;
+		pgoff_t page_ndx = dicedev_buf->read_off / DICEDEV_PAGE_SIZE;
 		loff_t page_off = dicedev_buf->read_off % DICEDEV_PAGE_SIZE;
-		// void *page = dicedev_buf->p_table.pages[page_ndx].buf;
+		void *page = dicedev_buf->p_table.pages[page_ndx].buf;
 		size_t curr_read_n = DICEDEV_PAGE_SIZE - page_off;
+
+		memcpy(temp_buf + read_bytes, page + page_off, curr_read_n);
 
 //		int err = copy_to_user(buf + read_bytes, page + page_off, curr_read_n);
 //		if (err)
@@ -368,6 +376,10 @@ static ssize_t dicedev_buf_read(struct file *file, char __user *buf,
 		if (off) *off += curr_read_n;
 		dicedev_buf->read_off += curr_read_n;
 	}
+
+	err = copy_to_user(buf, temp_buf, size);
+	if (err)
+		return -EFAULT;
 
 	return size;
 }
