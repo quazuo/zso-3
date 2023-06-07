@@ -354,6 +354,8 @@ static ssize_t dicedev_buf_write(struct file *file, const char __user *buf,
 		return -EINVAL;
 	}
 
+	printk(KERN_WARNING "buf_slot: %lu\n", (unsigned long)(buf_slot));
+
 	ctx->dicedev->running_ctx = ctx;
 
 	for (size_t i = 0; i < size / 4; i++) {
